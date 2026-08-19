@@ -44,7 +44,9 @@ export interface Customer {
   companyId?: string;
   code: string;
   name: string;
+  companyName?: string;
   phone: string;
+  mobile?: string;
   email?: string;
   address?: string;
   city?: string;
@@ -63,6 +65,7 @@ export interface Supplier {
   name: string;
   companyName?: string;
   phone: string;
+  mobile?: string;
   email?: string;
   address?: string;
   city?: string;
@@ -88,6 +91,11 @@ export interface Product {
   openingStock?: number;
   openingRate?: number;
   openingValue?: number;
+  excelStockValue?: number;
+  calculatedStockValue?: number;
+  valueDifference?: number;
+  importSource?: string;
+  importBatchId?: string;
   warehouseId?: string;
   warehouseName?: string;
   createdAt: string;
@@ -237,6 +245,7 @@ export interface AppSettings {
   printFontSize?: 'compact' | 'normal' | 'large';
   dotMatrixDashedBorders?: boolean;
   customPageWidthMm?: number;
+  importTolerance?: number; // Configurable rounding tolerance for Excel imports (default 10.00)
 }
 
 export type PageType =
@@ -434,6 +443,16 @@ export interface Warehouse {
 export type ImportType = 'MASTER_BALANCE' | 'OPENING_STOCK';
 export type ImportStatus = 'COMPLETED' | 'PARTIAL' | 'FAILED';
 
+export interface StockWarningDetail {
+  itemName: string;
+  excelValue: number;
+  calculatedValue: number;
+  difference: number;
+  status: string;
+  exceedsTolerance: boolean;
+  reason?: string;
+}
+
 export interface ImportHistoryRecord {
   id: string;
   companyId: string;
@@ -447,10 +466,13 @@ export interface ImportHistoryRecord {
   recordsSkipped: number;
   totalDebit: number;
   totalCredit: number;
+  totalStockValue?: number;
   isBalanced: boolean;
   status: ImportStatus;
   errors: string[];
   warnings: string[];
+  stockWarnings?: StockWarningDetail[];
+  toleranceSetting?: number;
   createdAt: string;
 }
 

@@ -55,16 +55,30 @@ export interface ParsedStockRow {
   warehouseName: string;
   openingQty: number;
   openingRate: number;
+  sellingPrice: number;
+  excelStockValue: number;
   openingValue: number;
   calculatedValue: number;
+  valueDifference: number;
   valueMismatch: boolean;
   valueMismatchDiff: number;
+  exceedsTolerance: boolean;
+  toleranceSetting: number;
+  warningMessage?: string;
   isDuplicate: boolean;
   duplicateAction: 'SKIP' | 'UPDATE_MASTER' | 'UPDATE_OPENING_BALANCE' | 'MERGE';
   matchedExistingId?: string;
   isSelected: boolean;
   hasError: boolean;
   errorMessage?: string;
+}
+
+export function safeMultiply(a: number, b: number): number {
+  return Number((Math.round(a * b * 10000) / 10000).toFixed(2));
+}
+
+export function safeSubtract(a: number, b: number): number {
+  return Number((Math.round((a - b) * 100) / 100).toFixed(2));
 }
 
 // Field mapping definitions
@@ -89,7 +103,8 @@ export const STOCK_TARGET_FIELDS = [
   { key: 'itemGroup', label: 'Item Group / Category', required: false, keywords: ['item group', 'group', 'category', 'product group'] },
   { key: 'unit', label: 'Unit of Measure (UOM)', required: false, keywords: ['unit', 'uom', 'unit of measure', 'unit name', 'qty unit'] },
   { key: 'openingQty', label: 'Opening Quantity', required: false, keywords: ['opening qty', 'opening quantity', 'qty', 'stock qty', 'quantity', 'op qty'] },
-  { key: 'openingRate', label: 'Opening Cost / Rate', required: false, keywords: ['opening rate', 'rate', 'cost price', 'cost', 'unit price', 'opening price'] },
+  { key: 'openingRate', label: 'Opening Cost / Rate', required: false, keywords: ['opening rate', 'cost rate', 'purchase rate', 'cost price', 'cost', 'unit price', 'opening price'] },
+  { key: 'sellingPrice', label: 'Sales Price / Selling Price / MRP', required: false, keywords: ['sales price', 'selling price', 'sale price', 'sale rate', 'mrp', 'selling rate', 'sales rate', 'price', 'retail price'] },
   { key: 'openingValue', label: 'Opening Stock Value', required: false, keywords: ['opening value', 'stock value', 'total value', 'value', 'amount', 'op value'] },
   { key: 'warehouse', label: 'Warehouse / Branch / Location', required: false, keywords: ['warehouse', 'branch', 'location', 'store', 'material center', 'godown'] }
 ];
@@ -306,12 +321,13 @@ export const ExcelImportService = {
   },
 
   /**
-   * Processes and validates Item Opening Stock rows.
+   * Processes and validates Item Opening Stock rows with exact Authoritative Excel Stock Value preservation.
    */
   processStockRows(
     rows: Record<string, any>[],
     mappings: ColumnMapping[],
-    companyId: string
+    companyId: string,
+    tolerance: number = 10.0
   ): ParsedStockRow[] {
     const existingProducts = StorageService.getProducts(companyId);
 
@@ -323,6 +339,7 @@ export const ExcelImportService = {
     const colUnit = getCol('unit');
     const colOpeningQty = getCol('openingQty');
     const colOpeningRate = getCol('openingRate');
+    const colSellingPrice = getCol('sellingPrice');
     const colOpeningValue = getCol('openingValue');
     const colWarehouse = getCol('warehouse');
 
@@ -335,15 +352,37 @@ export const ExcelImportService = {
 
       const openingQty = Math.max(0, parseNumeric(colOpeningQty ? r[colOpeningQty] : 0));
       const openingRate = Math.max(0, parseNumeric(colOpeningRate ? r[colOpeningRate] : 0));
-      let openingValue = parseNumeric(colOpeningValue ? r[colOpeningValue] : 0);
+      const sellingPrice = Math.max(0, parseNumeric(colSellingPrice ? r[colSellingPrice] : 0));
 
-      const calculatedValue = Number((openingQty * openingRate).toFixed(2));
-      if (!openingValue && calculatedValue > 0) {
-        openingValue = calculatedValue;
+      // Read exact Excel stock value if column exists and contains a value
+      const rawVal = colOpeningValue ? r[colOpeningValue] : undefined;
+      const hasRawVal = rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '';
+
+      let excelStockValue = 0;
+      if (hasRawVal) {
+        // Authoritative source: read exact number from Excel without recalculation or modification
+        excelStockValue = parseNumeric(rawVal);
+      } else {
+        // Fallback calculation only if Stock Value column is absent
+        excelStockValue = safeMultiply(openingQty, openingRate);
       }
 
-      const diff = Math.abs(calculatedValue - openingValue);
-      const valueMismatch = openingQty > 0 && openingRate > 0 && openingValue > 0 && diff > 1.0;
+      // Calculate Qty x Rate ONLY for comparison and reporting
+      const calculatedValue = safeMultiply(openingQty, openingRate);
+      const valueDifference = safeSubtract(calculatedValue, excelStockValue);
+      const absDiff = Math.abs(valueDifference);
+
+      const valueMismatch = (openingQty > 0 || openingRate > 0) && absDiff > 0.001;
+      const exceedsTolerance = valueMismatch && absDiff > tolerance;
+
+      let warningMessage: string | undefined = undefined;
+      if (valueMismatch) {
+        if (exceedsTolerance) {
+          warningMessage = `Review Required: Excel Stock Value (Rs. ${excelStockValue.toFixed(2)}) differs from calculated Qty × Rate (Rs. ${calculatedValue.toFixed(2)}) by Rs. ${absDiff.toFixed(2)}, exceeding Rs. ${tolerance.toFixed(2)} tolerance. The Excel value has been preserved.`;
+        } else {
+          warningMessage = `Stock value differs from calculated Qty × Rate by Rs. ${absDiff.toFixed(2)}. The Excel value (Rs. ${excelStockValue.toFixed(2)}) has been preserved.`;
+        }
+      }
 
       const normName = itemName.toLowerCase().replace(/\s+/g, ' ');
       const match = existingProducts.find(
@@ -368,10 +407,16 @@ export const ExcelImportService = {
         warehouseName,
         openingQty,
         openingRate,
-        openingValue,
+        sellingPrice,
+        excelStockValue,
+        openingValue: excelStockValue,
         calculatedValue,
+        valueDifference,
         valueMismatch,
-        valueMismatchDiff: diff,
+        valueMismatchDiff: absDiff,
+        exceedsTolerance,
+        toleranceSetting: tolerance,
+        warningMessage,
         isDuplicate,
         duplicateAction: (isDuplicate ? 'UPDATE_OPENING_BALANCE' : 'SKIP') as 'SKIP' | 'UPDATE_MASTER' | 'UPDATE_OPENING_BALANCE' | 'MERGE',
         matchedExistingId,
@@ -613,7 +658,7 @@ export const ExcelImportService = {
   },
 
   /**
-   * Executes Item Opening Stock import in a single atomic database batch.
+   * Executes Item Opening Stock import preserving authoritative Excel stock values.
    */
   async executeStockImport(params: {
     company: Company;
@@ -621,8 +666,9 @@ export const ExcelImportService = {
     openingDate: string;
     fileName: string;
     importedBy: string;
+    tolerance?: number;
   }): Promise<ImportHistoryRecord> {
-    const { company, rows, openingDate, fileName, importedBy } = params;
+    const { company, rows, openingDate, fileName, importedBy, tolerance = 10.0 } = params;
     const activeRows = rows.filter((r) => r.isSelected && !r.hasError);
 
     let createdCount = 0;
@@ -631,6 +677,7 @@ export const ExcelImportService = {
     let totalStockValue = 0;
     const errors: string[] = [];
     const warnings: string[] = [];
+    const stockWarnings: any[] = [];
 
     // Ensure Warehouse exists
     const warehouses = StorageService.getWarehouses(company.id);
@@ -648,50 +695,62 @@ export const ExcelImportService = {
           }, company.id);
         }
 
-        totalStockValue += row.openingValue;
+        const authoritativeVal = row.excelStockValue;
+        totalStockValue = safeSubtract(totalStockValue, -authoritativeVal);
+
+        const prodData: Partial<Product> = {
+          companyId: company.id,
+          name: row.itemName,
+          code: row.itemCode,
+          category: row.itemGroup,
+          unit: row.unit,
+          costPrice: row.openingRate,
+          sellingPrice: row.sellingPrice > 0 ? row.sellingPrice : safeMultiply(row.openingRate, 1.15),
+          currentStock: row.openingQty,
+          reorderLevel: 10,
+          openingStock: row.openingQty,
+          openingRate: row.openingRate,
+          openingValue: authoritativeVal, // Exact Authoritative Excel Value preserved
+          excelStockValue: authoritativeVal,
+          calculatedStockValue: row.calculatedValue,
+          valueDifference: row.valueDifference,
+          importSource: 'BUSY_EXCEL',
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name
+        };
 
         if (row.isDuplicate && row.matchedExistingId && row.duplicateAction !== 'SKIP') {
-          StorageService.saveProduct({
-            id: row.matchedExistingId,
-            name: row.itemName,
-            code: row.itemCode,
-            category: row.itemGroup,
-            unit: row.unit,
-            costPrice: row.openingRate,
-            sellingPrice: row.openingRate * 1.15, // default 15% margin
-            currentStock: row.openingQty,
-            reorderLevel: 10,
-            openingStock: row.openingQty,
-            openingRate: row.openingRate,
-            openingValue: row.openingValue,
-            warehouseId: warehouse.id,
-            warehouseName: warehouse.name
-          }, company.id);
+          prodData.id = row.matchedExistingId;
+          StorageService.saveProduct(prodData, company.id);
           updatedCount++;
         } else if (!row.isDuplicate) {
-          StorageService.saveProduct({
-            companyId: company.id,
-            name: row.itemName,
-            code: row.itemCode,
-            category: row.itemGroup,
-            unit: row.unit,
-            costPrice: row.openingRate,
-            sellingPrice: row.openingRate * 1.15,
-            currentStock: row.openingQty,
-            reorderLevel: 10,
-            openingStock: row.openingQty,
-            openingRate: row.openingRate,
-            openingValue: row.openingValue,
-            warehouseId: warehouse.id,
-            warehouseName: warehouse.name
-          }, company.id);
+          StorageService.saveProduct(prodData, company.id);
           createdCount++;
         } else {
           skippedCount++;
         }
 
         if (row.valueMismatch) {
-          warnings.push(`Item "${row.itemName}" has value discrepancy: calculated ${row.calculatedValue} vs Excel ${row.openingValue}.`);
+          const absDiff = Math.abs(row.valueDifference);
+          const statusText = row.exceedsTolerance
+            ? 'Review Required – Excel value preserved'
+            : 'Imported – Excel value preserved';
+
+          const warningMessage = `${row.itemName} | Excel Value: Rs. ${authoritativeVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Calculated Value: Rs. ${row.calculatedValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Difference: Rs. ${absDiff.toFixed(2)} | Status: ${statusText}`;
+
+          warnings.push(warningMessage);
+
+          stockWarnings.push({
+            itemName: row.itemName,
+            excelValue: authoritativeVal,
+            calculatedValue: row.calculatedValue,
+            difference: row.valueDifference,
+            status: statusText,
+            exceedsTolerance: row.exceedsTolerance,
+            reason: row.exceedsTolerance
+              ? `Difference of Rs. ${absDiff.toFixed(2)} exceeds Rs. ${tolerance.toFixed(2)} tolerance.`
+              : `Difference of Rs. ${absDiff.toFixed(2)} is within Rs. ${tolerance.toFixed(2)} tolerance.`
+          });
         }
       } catch (err: any) {
         errors.push(`Row ${row.rowIndex} (${row.itemName}): ${err.message || err}`);
@@ -713,9 +772,9 @@ export const ExcelImportService = {
         accountName: r.itemName,
         accountGroup: r.itemGroup,
         accountType: 'STOCK',
-        debit: r.openingValue,
+        debit: r.excelStockValue,
         credit: 0,
-        narration: `Opening stock: ${r.openingQty} ${r.unit} @ ${r.openingRate} in ${r.warehouseName}`
+        narration: `Opening stock: ${r.openingQty} ${r.unit} @ ${r.openingRate} in ${r.warehouseName} (Excel Value: ${r.excelStockValue})`
       })),
       createdAt: new Date().toISOString()
     };
@@ -734,10 +793,13 @@ export const ExcelImportService = {
       recordsSkipped: skippedCount,
       totalDebit: totalStockValue,
       totalCredit: totalStockValue,
+      totalStockValue,
       isBalanced: true,
       status: errors.length > 0 ? (createdCount > 0 ? 'PARTIAL' : 'FAILED') : 'COMPLETED',
       errors,
       warnings,
+      stockWarnings,
+      toleranceSetting: tolerance,
       createdAt: new Date().toISOString()
     };
 
@@ -746,7 +808,7 @@ export const ExcelImportService = {
     AuthService.recordAuditLog(
       'DATA_IMPORTED',
       'data_import',
-      `Imported Opening Stock for ${company.companyName} (${createdCount} items created, ${updatedCount} updated). Total Stock Value: ${totalStockValue}.`,
+      `Imported Opening Stock for ${company.companyName} (${createdCount} items created, ${updatedCount} updated). Total Stock Value: ${totalStockValue} (Excel Authoritative).`,
       company.id
     );
 
@@ -815,6 +877,7 @@ export const ExcelImportService = {
         'Opening Quantity': 50,
         'Opening Rate': 4500,
         'Opening Value': 225000,
+        'Sales Price': 5200,
         'Warehouse': 'Main Warehouse'
       },
       {
@@ -825,6 +888,7 @@ export const ExcelImportService = {
         'Opening Quantity': 100,
         'Opening Rate': 1200,
         'Opening Value': 120000,
+        'Sales Price': 1500,
         'Warehouse': 'Main Warehouse'
       },
       {
@@ -835,6 +899,7 @@ export const ExcelImportService = {
         'Opening Quantity': 15,
         'Opening Rate': 38000,
         'Opening Value': 570000,
+        'Sales Price': 44000,
         'Warehouse': 'Branch 1'
       }
     ];

@@ -189,6 +189,7 @@ export const StorageService = {
         } as Customer;
         all[index] = updated;
         setItem(STORAGE_KEYS.CUSTOMERS, all);
+        SupabaseSyncService.syncCustomer(updated);
         return updated;
       }
     }
@@ -199,16 +200,21 @@ export const StorageService = {
     const autoCode = `CUST-${String(codeCount).padStart(3, '0')}`;
 
     const newCust: Customer = {
-      id: `cust-${Date.now()}`,
+      id: `cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       companyId: targetCompId,
       code: customer.code?.trim() || autoCode,
       name: customer.name?.trim() || 'New Customer',
-      phone: customer.phone?.trim() || '',
+      companyName: customer.companyName?.trim() || customer.name?.trim() || '',
+      phone: customer.phone?.trim() || customer.mobile?.trim() || '',
+      mobile: customer.mobile?.trim() || customer.phone?.trim() || '',
       email: customer.email?.trim() || '',
       address: customer.address?.trim() || '',
       city: customer.city?.trim() || 'Colombo',
+      accountGroup: customer.accountGroup?.trim() || 'Sundry Debtors',
+      taxNumber: customer.taxNumber?.trim() || '',
       openingBalance: Number(customer.openingBalance || 0),
-      outstandingBalance: Number(customer.openingBalance || 0),
+      openingBalanceType: customer.openingBalanceType || 'Dr',
+      outstandingBalance: Number(customer.outstandingBalance !== undefined ? customer.outstandingBalance : (customer.openingBalance || 0)),
       createdAt: now
     };
 
@@ -256,16 +262,21 @@ export const StorageService = {
     const autoCode = `SUPP-${String(codeCount).padStart(3, '0')}`;
 
     const newSupp: Supplier = {
-      id: `supp-${Date.now()}`,
+      id: `supp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       companyId: targetCompId,
       code: supplier.code?.trim() || autoCode,
       name: supplier.name?.trim() || 'New Supplier',
-      companyName: supplier.companyName?.trim() || '',
-      phone: supplier.phone?.trim() || '',
+      companyName: supplier.companyName?.trim() || supplier.name?.trim() || '',
+      phone: supplier.phone?.trim() || supplier.mobile?.trim() || '',
+      mobile: supplier.mobile?.trim() || supplier.phone?.trim() || '',
       email: supplier.email?.trim() || '',
       address: supplier.address?.trim() || '',
+      city: supplier.city?.trim() || 'Colombo',
+      accountGroup: supplier.accountGroup?.trim() || 'Sundry Creditors',
+      taxNumber: supplier.taxNumber?.trim() || '',
       openingBalance: Number(supplier.openingBalance || 0),
-      payableBalance: Number(supplier.openingBalance || 0),
+      openingBalanceType: supplier.openingBalanceType || 'Cr',
+      payableBalance: Number(supplier.payableBalance !== undefined ? supplier.payableBalance : (supplier.openingBalance || 0)),
       createdAt: now
     };
 
@@ -341,10 +352,21 @@ export const StorageService = {
       code: product.code?.trim() || autoCode,
       name: product.name?.trim() || 'New Product',
       category: product.category?.trim() || 'General',
+      unit: product.unit || 'Nos',
       costPrice: Number(product.costPrice || 0),
       sellingPrice: Number(product.sellingPrice || 0),
       currentStock: Number(product.currentStock || 0),
       reorderLevel: Number(product.reorderLevel || 10),
+      openingStock: product.openingStock !== undefined ? Number(product.openingStock) : undefined,
+      openingRate: product.openingRate !== undefined ? Number(product.openingRate) : undefined,
+      openingValue: product.openingValue !== undefined ? Number(product.openingValue) : undefined,
+      excelStockValue: product.excelStockValue !== undefined ? Number(product.excelStockValue) : undefined,
+      calculatedStockValue: product.calculatedStockValue !== undefined ? Number(product.calculatedStockValue) : undefined,
+      valueDifference: product.valueDifference !== undefined ? Number(product.valueDifference) : undefined,
+      importSource: product.importSource,
+      importBatchId: product.importBatchId,
+      warehouseId: product.warehouseId,
+      warehouseName: product.warehouseName,
       createdAt: now
     };
 

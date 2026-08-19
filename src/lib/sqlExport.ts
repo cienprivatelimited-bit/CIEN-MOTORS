@@ -261,11 +261,19 @@ CREATE TABLE IF NOT EXISTS busy_ufo_products (
     description TEXT,
     category VARCHAR(100) NOT NULL DEFAULT 'General',
     unit VARCHAR(20) DEFAULT 'Pcs',
-    cost_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-    selling_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    cost_price NUMERIC(18, 4) NOT NULL DEFAULT 0.0000,
+    selling_price NUMERIC(18, 2) NOT NULL DEFAULT 0.00,
     vat_rate NUMERIC(5, 2) DEFAULT 0.00,
-    current_stock NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-    reorder_level NUMERIC(12, 2) NOT NULL DEFAULT 10.00,
+    current_stock NUMERIC(18, 4) NOT NULL DEFAULT 0.0000,
+    reorder_level NUMERIC(18, 4) NOT NULL DEFAULT 10.0000,
+    opening_stock NUMERIC(18, 4) DEFAULT 0.0000,
+    opening_rate NUMERIC(18, 4) DEFAULT 0.0000,
+    opening_value NUMERIC(18, 2) DEFAULT 0.00,
+    excel_stock_value NUMERIC(18, 2) DEFAULT 0.00,
+    calculated_stock_value NUMERIC(18, 2) DEFAULT 0.00,
+    value_difference NUMERIC(18, 2) DEFAULT 0.00,
+    import_source VARCHAR(50) DEFAULT 'BUSY_EXCEL',
+    import_batch_id VARCHAR(50),
     image_url TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     company_id VARCHAR(50) REFERENCES companies(id) ON DELETE CASCADE,
@@ -274,6 +282,14 @@ CREATE TABLE IF NOT EXISTS busy_ufo_products (
 );
 
 ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5, 2) DEFAULT 0.00;
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS opening_stock NUMERIC(18, 4) DEFAULT 0.0000;
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS opening_rate NUMERIC(18, 4) DEFAULT 0.0000;
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS opening_value NUMERIC(18, 2) DEFAULT 0.00;
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS excel_stock_value NUMERIC(18, 2) DEFAULT 0.00;
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS calculated_stock_value NUMERIC(18, 2) DEFAULT 0.00;
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS value_difference NUMERIC(18, 2) DEFAULT 0.00;
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS import_source VARCHAR(50) DEFAULT 'BUSY_EXCEL';
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS import_batch_id VARCHAR(50);
 
 -- ------------------------------------------------------------
 -- 4. INVOICES & TRANSACTIONS TABLES

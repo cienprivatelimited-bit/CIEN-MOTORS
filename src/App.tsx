@@ -677,7 +677,7 @@ export default function App() {
               session={session}
               showToast={addToast}
               onNavigateToReports={() => handleNavigate('reports')}
-              onDataImported={() => refreshAllStates()}
+              onDataImported={(targetCompId) => refreshAllStates(targetCompId)}
             />
           )}
 

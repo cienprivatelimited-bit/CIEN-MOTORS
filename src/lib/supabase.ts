@@ -180,6 +180,14 @@ export const SupabaseSyncService = {
         selling_price: Number(product.sellingPrice || 0),
         current_stock: Number(product.currentStock || 0),
         reorder_level: Number(product.reorderLevel || 10),
+        opening_stock: product.openingStock !== undefined ? Number(product.openingStock) : Number(product.currentStock || 0),
+        opening_rate: product.openingRate !== undefined ? Number(product.openingRate) : Number(product.costPrice || 0),
+        opening_value: product.openingValue !== undefined ? Number(product.openingValue) : Number(product.excelStockValue || 0),
+        excel_stock_value: product.excelStockValue !== undefined ? Number(product.excelStockValue) : Number(product.openingValue || 0),
+        calculated_stock_value: product.calculatedStockValue !== undefined ? Number(product.calculatedStockValue) : 0,
+        value_difference: product.valueDifference !== undefined ? Number(product.valueDifference) : 0,
+        import_source: product.importSource || null,
+        import_batch_id: product.importBatchId || null,
         company_id: product.companyId || 'comp-1',
         updated_at: new Date().toISOString()
       };
@@ -560,6 +568,14 @@ export const SupabaseSyncService = {
         sellingPrice: Number(row.selling_price || 0),
         currentStock: Number(row.current_stock || 0),
         reorderLevel: Number(row.reorder_level || 10),
+        openingStock: row.opening_stock !== null && row.opening_stock !== undefined ? Number(row.opening_stock) : undefined,
+        openingRate: row.opening_rate !== null && row.opening_rate !== undefined ? Number(row.opening_rate) : undefined,
+        openingValue: row.opening_value !== null && row.opening_value !== undefined ? Number(row.opening_value) : undefined,
+        excelStockValue: row.excel_stock_value !== null && row.excel_stock_value !== undefined ? Number(row.excel_stock_value) : undefined,
+        calculatedStockValue: row.calculated_stock_value !== null && row.calculated_stock_value !== undefined ? Number(row.calculated_stock_value) : undefined,
+        valueDifference: row.value_difference !== null && row.value_difference !== undefined ? Number(row.value_difference) : undefined,
+        importSource: row.import_source || undefined,
+        importBatchId: row.import_batch_id || undefined,
         createdAt: row.created_at || new Date().toISOString()
       }));
     } catch (e) {
