@@ -357,6 +357,16 @@ export const SupabaseSyncService = {
     }
   },
 
+  async deleteSaleInvoice(invoiceId: string): Promise<void> {
+    const client = getSupabaseClient();
+    if (!client) return;
+    try {
+      await client.from('busy_ufo_sales').delete().eq('id', invoiceId);
+    } catch (e) {
+      console.warn('Supabase sale delete exception:', e);
+    }
+  },
+
   // --- PURCHASES ---
   async syncPurchaseInvoice(purchase: PurchaseInvoice): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
@@ -414,16 +424,128 @@ export const SupabaseSyncService = {
     }
   },
 
+  async deletePurchaseInvoice(purchaseId: string): Promise<void> {
+    const client = getSupabaseClient();
+    if (!client) return;
+    try {
+      await client.from('busy_ufo_purchases').delete().eq('id', purchaseId);
+    } catch (e) {
+      console.warn('Supabase purchase delete exception:', e);
+    }
+  },
+
+  // --- RECEIPTS, PAYMENTS & EXPENSES ---
+  async syncReceipt(receipt: CustomerReceipt): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase not configured' };
+    try {
+      const payload = {
+        id: receipt.id,
+        receipt_number: receipt.receiptNumber,
+        date: receipt.date,
+        customer_id: receipt.customerId || null,
+        customer_name: receipt.customerName,
+        amount: Number(receipt.amount || 0),
+        payment_method: receipt.paymentMode || 'CASH',
+        reference_no: receipt.referenceNo || '',
+        notes: receipt.notes || '',
+        company_id: receipt.companyId || 'comp-1'
+      };
+      const { error } = await client.from('busy_ufo_customer_receipts').upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message };
+    }
+  },
+
+  async deleteReceipt(id: string): Promise<void> {
+    const client = getSupabaseClient();
+    if (!client) return;
+    try {
+      await client.from('busy_ufo_customer_receipts').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase receipt delete exception:', e);
+    }
+  },
+
+  async syncPayment(payment: SupplierPayment): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase not configured' };
+    try {
+      const payload = {
+        id: payment.id,
+        payment_number: payment.paymentNumber,
+        date: payment.date,
+        supplier_id: payment.supplierId || null,
+        supplier_name: payment.supplierName,
+        amount: Number(payment.amount || 0),
+        payment_method: payment.paymentMode || 'CASH',
+        reference_no: payment.referenceNo || '',
+        notes: payment.notes || '',
+        company_id: payment.companyId || 'comp-1'
+      };
+      const { error } = await client.from('busy_ufo_supplier_payments').upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message };
+    }
+  },
+
+  async deletePayment(id: string): Promise<void> {
+    const client = getSupabaseClient();
+    if (!client) return;
+    try {
+      await client.from('busy_ufo_supplier_payments').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase payment delete exception:', e);
+    }
+  },
+
+  async syncExpense(expense: Expense): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase not configured' };
+    try {
+      const payload = {
+        id: expense.id,
+        expense_number: expense.expenseNumber,
+        date: expense.date,
+        category: expense.category,
+        amount: Number(expense.amount || 0),
+        payment_method: expense.paymentMode || 'CASH',
+        notes: expense.notes || '',
+        company_id: expense.companyId || 'comp-1'
+      };
+      const { error } = await client.from('busy_ufo_expenses').upsert(payload, { onConflict: 'id' });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message };
+    }
+  },
+
+  async deleteExpense(id: string): Promise<void> {
+    const client = getSupabaseClient();
+    if (!client) return;
+    try {
+      await client.from('busy_ufo_expenses').delete().eq('id', id);
+    } catch (e) {
+      console.warn('Supabase expense delete exception:', e);
+    }
+  },
+
   // --- BULK FETCH FROM SUPABASE ---
-  async fetchAllRemoteProducts(): Promise<Product[] | null> {
+  async fetchAllRemoteProducts(companyId?: string): Promise<Product[] | null> {
     const client = getSupabaseClient();
     if (!client) return null;
 
     try {
-      const { data, error } = await client
-        .from('busy_ufo_products')
-        .select('*')
-        .order('name');
+      let query = client.from('busy_ufo_products').select('*').order('name');
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+      const { data, error } = await query;
 
       if (error || !data) return null;
 
@@ -446,15 +568,16 @@ export const SupabaseSyncService = {
     }
   },
 
-  async fetchAllRemoteCustomers(): Promise<Customer[] | null> {
+  async fetchAllRemoteCustomers(companyId?: string): Promise<Customer[] | null> {
     const client = getSupabaseClient();
     if (!client) return null;
 
     try {
-      const { data, error } = await client
-        .from('busy_ufo_customers')
-        .select('*')
-        .order('name');
+      let query = client.from('busy_ufo_customers').select('*').order('name');
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+      const { data, error } = await query;
 
       if (error || !data) return null;
 
@@ -477,15 +600,16 @@ export const SupabaseSyncService = {
     }
   },
 
-  async fetchAllRemoteSuppliers(): Promise<Supplier[] | null> {
+  async fetchAllRemoteSuppliers(companyId?: string): Promise<Supplier[] | null> {
     const client = getSupabaseClient();
     if (!client) return null;
 
     try {
-      const { data, error } = await client
-        .from('busy_ufo_suppliers')
-        .select('*')
-        .order('name');
+      let query = client.from('busy_ufo_suppliers').select('*').order('name');
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+      const { data, error } = await query;
 
       if (error || !data) return null;
 
@@ -505,6 +629,228 @@ export const SupabaseSyncService = {
     } catch (e) {
       console.error('Error fetching suppliers from Supabase:', e);
       return null;
+    }
+  },
+
+  async fetchAllRemoteSales(companyId?: string): Promise<SaleInvoice[] | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+
+    try {
+      let query = client.from('busy_ufo_sales').select('*').order('invoice_date', { ascending: false });
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+      const { data: salesData, error: salesError } = await query;
+      if (salesError || !salesData) return null;
+
+      // Fetch all sale items
+      const saleIds = salesData.map((s: any) => s.id);
+      let itemsBySaleId: Record<string, any[]> = {};
+      if (saleIds.length > 0) {
+        const { data: itemsData } = await client
+          .from('busy_ufo_sale_items')
+          .select('*')
+          .in('invoice_id', saleIds);
+        
+        if (itemsData) {
+          itemsData.forEach((item: any) => {
+            if (!itemsBySaleId[item.invoice_id]) itemsBySaleId[item.invoice_id] = [];
+            itemsBySaleId[item.invoice_id].push({
+              productId: item.product_id || '',
+              productCode: item.product_code || '',
+              productName: item.product_name || '',
+              quantity: Number(item.quantity || 0),
+              unitPrice: Number(item.unit_price || 0),
+              discount: Number(item.discount || 0),
+              discountType: item.discount_type || 'PERCENT',
+              total: Number(item.total || 0)
+            });
+          });
+        }
+      }
+
+      return salesData.map((row: any) => ({
+        id: row.id,
+        companyId: row.company_id || 'comp-1',
+        invoiceNumber: row.invoice_number,
+        date: row.invoice_date,
+        customerId: row.customer_id || undefined,
+        customerName: row.customer_name,
+        type: row.sale_type as 'CASH' | 'CREDIT',
+        items: itemsBySaleId[row.id] || [],
+        subtotal: Number(row.total_amount || 0),
+        discount: Number(row.overall_discount || 0),
+        grandTotal: Number(row.grand_total || 0),
+        paidAmount: Number(row.paid_amount || 0),
+        dueAmount: Number(row.due_amount || 0),
+        notes: row.notes || '',
+        createdAt: row.created_at || new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Error fetching sales from Supabase:', e);
+      return null;
+    }
+  },
+
+  async fetchAllRemotePurchases(companyId?: string): Promise<PurchaseInvoice[] | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+
+    try {
+      let query = client.from('busy_ufo_purchases').select('*').order('purchase_date', { ascending: false });
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+      const { data: purData, error: purError } = await query;
+      if (purError || !purData) return null;
+
+      const purIds = purData.map((p: any) => p.id);
+      let itemsByPurId: Record<string, any[]> = {};
+      if (purIds.length > 0) {
+        const { data: itemsData } = await client
+          .from('busy_ufo_purchase_items')
+          .select('*')
+          .in('purchase_id', purIds);
+        
+        if (itemsData) {
+          itemsData.forEach((item: any) => {
+            if (!itemsByPurId[item.purchase_id]) itemsByPurId[item.purchase_id] = [];
+            itemsByPurId[item.purchase_id].push({
+              productId: item.product_id || '',
+              productCode: item.product_code || '',
+              productName: item.product_name || '',
+              quantity: Number(item.quantity || 0),
+              unitCost: Number(item.unit_cost || 0),
+              discount: Number(item.discount || 0),
+              discountType: item.discount_type || 'PERCENT',
+              total: Number(item.total || 0)
+            });
+          });
+        }
+      }
+
+      return purData.map((row: any) => ({
+        id: row.id,
+        companyId: row.company_id || 'comp-1',
+        purchaseNumber: row.purchase_number,
+        date: row.purchase_date,
+        supplierId: row.supplier_id || '',
+        supplierName: row.supplier_name,
+        type: row.purchase_type as 'CASH' | 'CREDIT',
+        items: itemsByPurId[row.id] || [],
+        subtotal: Number(row.total_amount || 0),
+        discount: Number(row.overall_discount || 0),
+        grandTotal: Number(row.grand_total || 0),
+        paidAmount: Number(row.paid_amount || 0),
+        dueAmount: Number(row.due_amount || 0),
+        notes: row.notes || '',
+        createdAt: row.created_at || new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Error fetching purchases from Supabase:', e);
+      return null;
+    }
+  },
+
+  async fetchAllRemoteReceipts(companyId?: string): Promise<CustomerReceipt[] | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+    try {
+      let query = client.from('busy_ufo_customer_receipts').select('*').order('date', { ascending: false });
+      if (companyId) query = query.eq('company_id', companyId);
+      const { data, error } = await query;
+      if (error || !data) return null;
+      return data.map((row: any) => ({
+        id: row.id,
+        companyId: row.company_id || 'comp-1',
+        receiptNumber: row.receipt_number,
+        date: row.date,
+        customerId: row.customer_id || '',
+        customerName: row.customer_name,
+        amount: Number(row.amount || 0),
+        paymentMode: (row.payment_method || 'CASH') as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE',
+        referenceNo: row.reference_no || '',
+        notes: row.notes || '',
+        createdAt: row.created_at || new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Error fetching receipts from Supabase:', e);
+      return null;
+    }
+  },
+
+  async fetchAllRemotePayments(companyId?: string): Promise<SupplierPayment[] | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+    try {
+      let query = client.from('busy_ufo_supplier_payments').select('*').order('date', { ascending: false });
+      if (companyId) query = query.eq('company_id', companyId);
+      const { data, error } = await query;
+      if (error || !data) return null;
+      return data.map((row: any) => ({
+        id: row.id,
+        companyId: row.company_id || 'comp-1',
+        paymentNumber: row.payment_number,
+        date: row.date,
+        supplierId: row.supplier_id || '',
+        supplierName: row.supplier_name,
+        amount: Number(row.amount || 0),
+        paymentMode: (row.payment_method || 'CASH') as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE',
+        referenceNo: row.reference_no || '',
+        notes: row.notes || '',
+        createdAt: row.created_at || new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Error fetching payments from Supabase:', e);
+      return null;
+    }
+  },
+
+  async fetchAllRemoteExpenses(companyId?: string): Promise<Expense[] | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+    try {
+      let query = client.from('busy_ufo_expenses').select('*').order('date', { ascending: false });
+      if (companyId) query = query.eq('company_id', companyId);
+      const { data, error } = await query;
+      if (error || !data) return null;
+      return data.map((row: any) => ({
+        id: row.id,
+        companyId: row.company_id || 'comp-1',
+        expenseNumber: row.expense_number,
+        date: row.date,
+        category: row.category,
+        amount: Number(row.amount || 0),
+        paymentMode: (row.payment_method || 'CASH') as 'CASH' | 'BANK_TRANSFER',
+        notes: row.notes || '',
+        createdAt: row.created_at || new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Error fetching expenses from Supabase:', e);
+      return null;
+    }
+  },
+
+  // --- SUPABASE REALTIME MULTI-DEVICE SUBSCRIPTION ---
+  subscribeToRemoteChanges(callback: (table: string, eventType: string) => void): () => void {
+    const client = getSupabaseClient();
+    if (!client) return () => {};
+
+    try {
+      const channel = client
+        .channel('ufo_realtime_sync')
+        .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+          callback(payload.table, payload.eventType);
+        })
+        .subscribe();
+
+      return () => {
+        client.removeChannel(channel);
+      };
+    } catch (e) {
+      console.error('Failed to subscribe to Supabase realtime:', e);
+      return () => {};
     }
   }
 };

@@ -25,6 +25,7 @@ import {
 import { StorageService } from './lib/storage';
 import { AuthService } from './lib/auth';
 import { checkPermission } from './lib/permissions';
+import { SupabaseSyncService, getActiveSupabaseCredentials } from './lib/supabase';
 
 import { Login } from './components/Login';
 import { Header } from './components/Header';
@@ -164,6 +165,34 @@ export default function App() {
     setExpenses(StorageService.getExpenses(activeCompId));
   };
 
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  const performCloudPull = async (compId?: string, showToastNotice = false) => {
+    const activeCompId = compId || session?.company?.id;
+    const creds = getActiveSupabaseCredentials();
+    if (!creds.url || !creds.key) return;
+
+    setIsSyncingCloud(true);
+    try {
+      const res = await StorageService.pullFromSupabase(activeCompId);
+      if (res.success) {
+        refreshAllStates(activeCompId);
+        if (showToastNotice) {
+          const totalPulled = Object.values(res.pulledCounts || {}).reduce((a, b) => a + b, 0);
+          if (totalPulled > 0) {
+            addToast('success', `Synced ${totalPulled} cloud records across devices.`);
+          } else {
+            addToast('info', 'Cloud is already in sync. No new records found.');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Cloud sync error:', e);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
   useEffect(() => {
     document.title = 'UFO Tech solution';
   }, []);
@@ -171,7 +200,34 @@ export default function App() {
   useEffect(() => {
     if (session?.company?.id) {
       refreshAllStates(session.company.id);
+      // Auto-pull on company load
+      performCloudPull(session.company.id, false);
     }
+  }, [session?.company?.id]);
+
+  // Real-time multi-device cloud listener
+  useEffect(() => {
+    const unsubscribe = SupabaseSyncService.subscribeToRemoteChanges((table, eventType) => {
+      console.log(`[Supabase Realtime] ${eventType} on ${table}`);
+      if (session?.company?.id) {
+        performCloudPull(session.company.id, false);
+      }
+    });
+
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible' && session?.company?.id) {
+        performCloudPull(session.company.id, false);
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleFocusOrVisible);
+    window.addEventListener('focus', handleFocusOrVisible);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('visibilitychange', handleFocusOrVisible);
+      window.removeEventListener('focus', handleFocusOrVisible);
+    };
   }, [session?.company?.id]);
 
   const handleSwitchCompany = (companyId: string) => {
@@ -406,6 +462,9 @@ export default function App() {
     if (session) {
       AuthService.recordAuditLog('SETTINGS_UPDATED', 'settings', 'Updated company profile and application settings');
     }
+    if (newSettings.supabaseUrl && newSettings.supabaseAnonKey) {
+      performCloudPull(session?.company?.id, true);
+    }
   };
 
   const handleResetToSample = () => {
@@ -454,6 +513,10 @@ export default function App() {
         onLogout={handleLogout}
         onSwitchCompany={handleSwitchCompany}
         onRefreshSession={refreshSession}
+        showToast={addToast}
+        isSyncingCloud={isSyncingCloud}
+        onManualSync={() => performCloudPull(undefined, true)}
+        hasSupabaseConfigured={Boolean(getActiveSupabaseCredentials().url && getActiveSupabaseCredentials().key)}
       />
 
       {/* Main Body */}

@@ -457,6 +457,7 @@ export const StorageService = {
 
     sales.splice(targetIndex, 1);
     setItem(STORAGE_KEYS.SALES, sales);
+    SupabaseSyncService.deleteSaleInvoice(id);
   },
 
   // --- PURCHASES ---
@@ -546,6 +547,7 @@ export const StorageService = {
 
     purchases.splice(targetIndex, 1);
     setItem(STORAGE_KEYS.PURCHASES, purchases);
+    SupabaseSyncService.deletePurchaseInvoice(id);
   },
 
   // --- CUSTOMER RECEIPTS ---
@@ -596,6 +598,7 @@ export const StorageService = {
 
     receipts.unshift(newReceipt);
     setItem(STORAGE_KEYS.RECEIPTS, receipts);
+    SupabaseSyncService.syncReceipt(newReceipt);
 
     return newReceipt;
   },
@@ -633,6 +636,7 @@ export const StorageService = {
 
     receipts.splice(targetIndex, 1);
     setItem(STORAGE_KEYS.RECEIPTS, receipts);
+    SupabaseSyncService.deleteReceipt(id);
   },
 
   // --- SUPPLIER PAYMENTS ---
@@ -683,6 +687,7 @@ export const StorageService = {
 
     payments.unshift(newPayment);
     setItem(STORAGE_KEYS.PAYMENTS, payments);
+    SupabaseSyncService.syncPayment(newPayment);
 
     return newPayment;
   },
@@ -720,6 +725,7 @@ export const StorageService = {
 
     payments.splice(targetIndex, 1);
     setItem(STORAGE_KEYS.PAYMENTS, payments);
+    SupabaseSyncService.deletePayment(id);
   },
 
   // --- EXPENSES ---
@@ -744,6 +750,7 @@ export const StorageService = {
 
     expenses.unshift(newExpense);
     setItem(STORAGE_KEYS.EXPENSES, expenses);
+    SupabaseSyncService.syncExpense(newExpense);
 
     return newExpense;
   },
@@ -755,6 +762,7 @@ export const StorageService = {
 
     expenses.splice(targetIndex, 1);
     setItem(STORAGE_KEYS.EXPENSES, expenses);
+    SupabaseSyncService.deleteExpense(id);
   },
 
   // --- CASH BALANCE & DASHBOARD STATS ---
@@ -1071,5 +1079,84 @@ export const StorageService = {
     setItem(STORAGE_KEYS.RECEIPTS, []);
     setItem(STORAGE_KEYS.PAYMENTS, []);
     setItem(STORAGE_KEYS.EXPENSES, []);
+  },
+
+  // --- MULTI-DEVICE CLOUD PULL ---
+  async pullFromSupabase(companyId?: string): Promise<{ success: boolean; pulledCounts?: Record<string, number>; error?: string }> {
+    try {
+      const [remoteProducts, remoteCustomers, remoteSuppliers, remoteSales, remotePurchases, remoteReceipts, remotePayments, remoteExpenses] = await Promise.all([
+        SupabaseSyncService.fetchAllRemoteProducts(companyId),
+        SupabaseSyncService.fetchAllRemoteCustomers(companyId),
+        SupabaseSyncService.fetchAllRemoteSuppliers(companyId),
+        SupabaseSyncService.fetchAllRemoteSales(companyId),
+        SupabaseSyncService.fetchAllRemotePurchases(companyId),
+        SupabaseSyncService.fetchAllRemoteReceipts(companyId),
+        SupabaseSyncService.fetchAllRemotePayments(companyId),
+        SupabaseSyncService.fetchAllRemoteExpenses(companyId)
+      ]);
+
+      const pulledCounts: Record<string, number> = {};
+
+      if (remoteProducts && remoteProducts.length > 0) {
+        const local = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+        const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.PRODUCTS, [...remoteProducts, ...otherComp]);
+        pulledCounts.products = remoteProducts.length;
+      }
+
+      if (remoteCustomers && remoteCustomers.length > 0) {
+        const local = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+        const otherComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.CUSTOMERS, [...remoteCustomers, ...otherComp]);
+        pulledCounts.customers = remoteCustomers.length;
+      }
+
+      if (remoteSuppliers && remoteSuppliers.length > 0) {
+        const local = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+        const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.SUPPLIERS, [...remoteSuppliers, ...otherComp]);
+        pulledCounts.suppliers = remoteSuppliers.length;
+      }
+
+      if (remoteSales && remoteSales.length > 0) {
+        const local = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, []);
+        const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.SALES, [...remoteSales, ...otherComp]);
+        pulledCounts.sales = remoteSales.length;
+      }
+
+      if (remotePurchases && remotePurchases.length > 0) {
+        const local = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, []);
+        const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.PURCHASES, [...remotePurchases, ...otherComp]);
+        pulledCounts.purchases = remotePurchases.length;
+      }
+
+      if (remoteReceipts && remoteReceipts.length > 0) {
+        const local = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, []);
+        const otherComp = companyId ? local.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.RECEIPTS, [...remoteReceipts, ...otherComp]);
+        pulledCounts.receipts = remoteReceipts.length;
+      }
+
+      if (remotePayments && remotePayments.length > 0) {
+        const local = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, []);
+        const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.PAYMENTS, [...remotePayments, ...otherComp]);
+        pulledCounts.payments = remotePayments.length;
+      }
+
+      if (remoteExpenses && remoteExpenses.length > 0) {
+        const local = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, []);
+        const otherComp = companyId ? local.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
+        setItem(STORAGE_KEYS.EXPENSES, [...remoteExpenses, ...otherComp]);
+        pulledCounts.expenses = remoteExpenses.length;
+      }
+
+      return { success: true, pulledCounts };
+    } catch (err: any) {
+      console.error('Error pulling from Supabase:', err);
+      return { success: false, error: err?.message };
+    }
   }
 };

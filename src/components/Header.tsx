@@ -15,7 +15,9 @@ import {
   Lock,
   Building2,
   ChevronDown,
-  Check
+  Check,
+  Cloud,
+  RefreshCw
 } from 'lucide-react';
 import { AppSettings, PageType, AuthSession } from '../types';
 import { checkPermission } from '../lib/permissions';
@@ -36,6 +38,9 @@ interface HeaderProps {
   onLogout?: () => void;
   onSwitchCompany?: (companyId: string) => void;
   showToast?: (type: 'success' | 'error' | 'info', message: string) => void;
+  isSyncingCloud?: boolean;
+  onManualSync?: () => void;
+  hasSupabaseConfigured?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -52,7 +57,10 @@ export const Header: React.FC<HeaderProps> = ({
   session,
   onLogout,
   onSwitchCompany,
-  showToast
+  showToast,
+  isSyncingCloud = false,
+  onManualSync,
+  hasSupabaseConfigured = false
 }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isCompanyMenuOpen, setIsCompanyMenuOpen] = useState(false);
@@ -270,6 +278,42 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right side CTA & User Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Cloud Multi-Device Sync Indicator */}
+          <button
+            onClick={() => {
+              if (!hasSupabaseConfigured) {
+                onNavigate('settings');
+                showToast?.('info', 'Please configure your Supabase URL and Key in Settings to enable Cloud sync across devices.');
+              } else if (onManualSync) {
+                onManualSync();
+              }
+            }}
+            disabled={isSyncingCloud}
+            title={
+              isSyncingCloud
+                ? 'Syncing latest records from Supabase Cloud...'
+                : hasSupabaseConfigured
+                ? 'Multi-Device Cloud Sync is Active. Click to sync instantly now.'
+                : 'Cloud sync not configured on this device. Click to configure in Settings.'
+            }
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer shadow-2xs ${
+              isSyncingCloud
+                ? 'bg-blue-50 border-blue-200 text-blue-700 animate-pulse'
+                : hasSupabaseConfigured
+                ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-800'
+                : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800'
+            }`}
+          >
+            {isSyncingCloud ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+            ) : (
+              <Cloud className={`w-3.5 h-3.5 ${hasSupabaseConfigured ? 'text-emerald-600' : 'text-amber-600'}`} />
+            )}
+            <span className="hidden md:inline font-mono">
+              {isSyncingCloud ? 'Syncing...' : hasSupabaseConfigured ? 'Cloud Live' : 'Connect Cloud'}
+            </span>
+          </button>
+
           {/* Cash Balance Widget */}
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 text-slate-900 px-2.5 sm:px-3.5 py-1.5 rounded-xl shadow-2xs">
             <div className="p-1 bg-[#2563EB] text-[#FACC15] rounded-lg shrink-0">

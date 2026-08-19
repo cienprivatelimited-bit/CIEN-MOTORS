@@ -52,6 +52,8 @@ export const Settings: React.FC<SettingsProps> = ({
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  const [isPulling, setIsPulling] = useState(false);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSaveSettings(formData);
@@ -93,6 +95,9 @@ export const Settings: React.FC<SettingsProps> = ({
       const supps = StorageService.getSuppliers();
       const sales = StorageService.getSales();
       const purchases = StorageService.getPurchases();
+      const receipts = StorageService.getReceipts();
+      const payments = StorageService.getPayments();
+      const expenses = StorageService.getExpenses();
 
       let syncedCount = 0;
       for (const p of prods) {
@@ -115,12 +120,46 @@ export const Settings: React.FC<SettingsProps> = ({
         await SupabaseSyncService.syncPurchaseInvoice(pur);
         syncedCount++;
       }
+      for (const rec of receipts) {
+        await SupabaseSyncService.syncReceipt(rec);
+        syncedCount++;
+      }
+      for (const pay of payments) {
+        await SupabaseSyncService.syncPayment(pay);
+        syncedCount++;
+      }
+      for (const exp of expenses) {
+        await SupabaseSyncService.syncExpense(exp);
+        syncedCount++;
+      }
 
       showToast('success', `Synced ${syncedCount} total records to Supabase Cloud!`);
     } catch (err: any) {
       showToast('error', `Sync failed: ${err?.message || 'Check database connection'}`);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handlePullAllFromCloud = async () => {
+    if (!formData.supabaseUrl || !formData.supabaseAnonKey) {
+      showToast('error', 'Please enter your Supabase URL and Key and save settings first.');
+      return;
+    }
+    setIsPulling(true);
+    try {
+      const result = await StorageService.pullFromSupabase();
+      if (result.success) {
+        const total = Object.values(result.pulledCounts || {}).reduce((a, b) => a + b, 0);
+        showToast('success', `Pulled ${total} records from Supabase cloud into this device!`);
+        window.location.reload();
+      } else {
+        showToast('error', `Cloud pull failed: ${result.error || 'Check Supabase connection'}`);
+      }
+    } catch (err: any) {
+      showToast('error', `Cloud pull failed: ${err?.message || 'Check connection'}`);
+    } finally {
+      setIsPulling(false);
     }
   };
 
@@ -545,9 +584,21 @@ export const Settings: React.FC<SettingsProps> = ({
                   disabled={isSyncing || !formData.supabaseUrl || !formData.supabaseAnonKey}
                   onClick={handlePushAllToCloud}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-xs border border-emerald-200 cursor-pointer disabled:opacity-50 transition-all"
+                  title="Upload all local records to Supabase Cloud"
                 >
                   <CloudUpload className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isSyncing ? 'Syncing...' : 'Sync Local Data to Supabase'}</span>
+                  <span>{isSyncing ? 'Pushing...' : 'Push Local to Cloud'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isPulling || !formData.supabaseUrl || !formData.supabaseAnonKey}
+                  onClick={handlePullAllFromCloud}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg text-xs border border-indigo-200 cursor-pointer disabled:opacity-50 transition-all"
+                  title="Fetch and pull all records from Supabase Cloud to this device"
+                >
+                  <CloudDownload className={`w-3.5 h-3.5 ${isPulling ? 'animate-spin' : ''}`} />
+                  <span>{isPulling ? 'Pulling...' : 'Pull Cloud to Device'}</span>
                 </button>
               </div>
             </div>
