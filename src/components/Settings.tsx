@@ -21,7 +21,7 @@ import { SUPABASE_SQL_SCHEMA } from '../lib/sqlExport';
 interface SettingsProps {
   settings: AppSettings;
   onSaveSettings: (settings: AppSettings) => void;
-  onResetToSample: () => void;
+  onResetToSample?: () => void;
   onClearAll: () => void;
   showToast: (type: 'success' | 'error' | 'info', message: string) => void;
   onNavigateToUsers?: () => void;
@@ -457,29 +457,15 @@ export const Settings: React.FC<SettingsProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm('Reload sample Sri Lankan business dataset?')) {
-                    onResetToSample();
-                    showToast('success', 'Sample data loaded!');
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold rounded-xl text-xs cursor-pointer"
-              >
-                <RefreshCw className="w-4 h-4 text-amber-700" />
-                <span>Seed Sample Data</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm('ARE YOU SURE? This clears all sales, purchases & customers.')) {
+                  if (window.confirm('ARE YOU SURE? This clears all operational data (sales, purchases, inventory, customers, suppliers) and resets to a clean empty state.')) {
                     onClearAll();
-                    showToast('info', 'Database reset to empty state.');
+                    showToast('info', 'All operational data cleared successfully.');
                   }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-xs cursor-pointer"
               >
                 <Trash2 className="w-4 h-4 text-rose-600" />
-                <span>Reset DB</span>
+                <span>Clear All Data</span>
               </button>
             </div>
           </div>

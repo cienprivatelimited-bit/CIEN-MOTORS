@@ -46,7 +46,20 @@ const STORAGE_KEYS = {
   IMPORT_HISTORY: 'busy_ufo_import_history'
 };
 
-const DEFAULT_COMPANY_ID = 'comp-abc-traders';
+const DEFAULT_COMPANY_ID = 'comp-1';
+
+// One-time purge of legacy demo records if detected
+function purgeLegacyDemoData(): void {
+  try {
+    const rawComp = localStorage.getItem(STORAGE_KEYS.COMPANIES);
+    if (rawComp && (rawComp.includes('comp-abc-traders') || rawComp.includes('ABC Traders'))) {
+      Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+    }
+  } catch {
+    // Ignore storage access errors in restricted iframe sandbox
+  }
+}
+purgeLegacyDemoData();
 
 function getItem<T>(key: string, defaultValue: T): T {
   try {
