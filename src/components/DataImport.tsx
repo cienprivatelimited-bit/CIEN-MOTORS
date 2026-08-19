@@ -50,11 +50,14 @@ interface DataImportProps {
   session: AuthSession;
   showToast: (type: 'success' | 'error' | 'info', message: string) => void;
   onNavigateToReports?: () => void;
+  onDataImported?: () => void;
 }
 
 export const DataImport: React.FC<DataImportProps> = ({
   session,
-  showToast
+  showToast,
+  onNavigateToReports,
+  onDataImported
 }) => {
   const [activeTab, setActiveTab] = useState<'wizard' | 'history'>('wizard');
 
@@ -239,6 +242,7 @@ export const DataImport: React.FC<DataImportProps> = ({
 
       setImportResult(result);
       refreshHistory();
+      onDataImported?.();
       setStep(4);
       showToast('success', `Data import completed successfully for ${selectedCompany.companyName}.`);
     } catch (err: any) {

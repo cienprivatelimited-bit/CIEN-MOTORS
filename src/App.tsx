@@ -130,6 +130,7 @@ export default function App() {
     setHistoryIndex(newHistory.length - 1);
     setCurrentPage(page);
     setIsMobileMenuOpen(false);
+    refreshAllStates();
   };
 
   const handleBack = () => {
@@ -676,6 +677,7 @@ export default function App() {
               session={session}
               showToast={addToast}
               onNavigateToReports={() => handleNavigate('reports')}
+              onDataImported={() => refreshAllStates()}
             />
           )}
 
