@@ -28,6 +28,7 @@ import {
   INITIAL_EXPENSES,
   INITIAL_COMPANIES
 } from './sampleData';
+import { SupabaseSyncService } from './supabase';
 
 const STORAGE_KEYS = {
   COMPANIES: 'busy_ufo_companies',
@@ -213,12 +214,14 @@ export const StorageService = {
 
     all.unshift(newCust);
     setItem(STORAGE_KEYS.CUSTOMERS, all);
+    SupabaseSyncService.syncCustomer(newCust);
     return newCust;
   },
 
   deleteCustomer(id: string): void {
     const all = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS).filter((c) => c.id !== id);
     setItem(STORAGE_KEYS.CUSTOMERS, all);
+    SupabaseSyncService.deleteCustomer(id);
   },
 
   // --- SUPPLIERS ---
@@ -243,6 +246,7 @@ export const StorageService = {
         } as Supplier;
         all[index] = updated;
         setItem(STORAGE_KEYS.SUPPLIERS, all);
+        SupabaseSyncService.syncSupplier(updated);
         return updated;
       }
     }
@@ -267,12 +271,14 @@ export const StorageService = {
 
     all.unshift(newSupp);
     setItem(STORAGE_KEYS.SUPPLIERS, all);
+    SupabaseSyncService.syncSupplier(newSupp);
     return newSupp;
   },
 
   deleteSupplier(id: string): void {
     const all = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS).filter((s) => s.id !== id);
     setItem(STORAGE_KEYS.SUPPLIERS, all);
+    SupabaseSyncService.deleteSupplier(id);
   },
 
   // --- PRODUCTS ---
@@ -320,6 +326,7 @@ export const StorageService = {
         } as Product;
         all[index] = updated;
         setItem(STORAGE_KEYS.PRODUCTS, all);
+        SupabaseSyncService.syncProduct(updated);
         return updated;
       }
     }
@@ -343,12 +350,14 @@ export const StorageService = {
 
     all.unshift(newProd);
     setItem(STORAGE_KEYS.PRODUCTS, all);
+    SupabaseSyncService.syncProduct(newProd);
     return newProd;
   },
 
   deleteProduct(id: string): void {
     const all = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS).filter((p) => p.id !== id);
     setItem(STORAGE_KEYS.PRODUCTS, all);
+    SupabaseSyncService.deleteProduct(id);
   },
 
   // --- SALES & INVOICES ---
@@ -410,6 +419,7 @@ export const StorageService = {
     // 5. Save Sales
     sales.unshift(newInvoice);
     setItem(STORAGE_KEYS.SALES, sales);
+    SupabaseSyncService.syncSaleInvoice(newInvoice);
 
     return newInvoice;
   },
@@ -498,6 +508,7 @@ export const StorageService = {
 
     purchases.unshift(newPurchase);
     setItem(STORAGE_KEYS.PURCHASES, purchases);
+    SupabaseSyncService.syncPurchaseInvoice(newPurchase);
 
     return newPurchase;
   },

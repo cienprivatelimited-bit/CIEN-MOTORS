@@ -385,4 +385,101 @@ CREATE INDEX IF NOT EXISTS idx_customers_code ON busy_ufo_customers(code);
 CREATE INDEX IF NOT EXISTS idx_suppliers_code ON busy_ufo_suppliers(code);
 CREATE INDEX IF NOT EXISTS idx_sales_date ON busy_ufo_sales(invoice_date);
 CREATE INDEX IF NOT EXISTS idx_purchases_date ON busy_ufo_purchases(purchase_date);
+
+-- ------------------------------------------------------------
+-- 7. ROW LEVEL SECURITY (RLS) POLICIES FOR PUBLIC / ANON ACCESS
+-- ------------------------------------------------------------
+ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_sale_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_purchase_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_customer_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_supplier_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE role_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_company_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    -- Companies
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'companies' AND policyname = 'Allow all on companies') THEN
+        CREATE POLICY "Allow all on companies" ON companies FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Settings
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_settings' AND policyname = 'Allow all on busy_ufo_settings') THEN
+        CREATE POLICY "Allow all on busy_ufo_settings" ON busy_ufo_settings FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Products
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_products' AND policyname = 'Allow all on busy_ufo_products') THEN
+        CREATE POLICY "Allow all on busy_ufo_products" ON busy_ufo_products FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Customers
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_customers' AND policyname = 'Allow all on busy_ufo_customers') THEN
+        CREATE POLICY "Allow all on busy_ufo_customers" ON busy_ufo_customers FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Suppliers
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_suppliers' AND policyname = 'Allow all on busy_ufo_suppliers') THEN
+        CREATE POLICY "Allow all on busy_ufo_suppliers" ON busy_ufo_suppliers FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Sales
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_sales' AND policyname = 'Allow all on busy_ufo_sales') THEN
+        CREATE POLICY "Allow all on busy_ufo_sales" ON busy_ufo_sales FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Sale items
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_sale_items' AND policyname = 'Allow all on busy_ufo_sale_items') THEN
+        CREATE POLICY "Allow all on busy_ufo_sale_items" ON busy_ufo_sale_items FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Purchases
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_purchases' AND policyname = 'Allow all on busy_ufo_purchases') THEN
+        CREATE POLICY "Allow all on busy_ufo_purchases" ON busy_ufo_purchases FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Purchase items
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_purchase_items' AND policyname = 'Allow all on busy_ufo_purchase_items') THEN
+        CREATE POLICY "Allow all on busy_ufo_purchase_items" ON busy_ufo_purchase_items FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Receipts
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_customer_receipts' AND policyname = 'Allow all on busy_ufo_customer_receipts') THEN
+        CREATE POLICY "Allow all on busy_ufo_customer_receipts" ON busy_ufo_customer_receipts FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Payments
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_supplier_payments' AND policyname = 'Allow all on busy_ufo_supplier_payments') THEN
+        CREATE POLICY "Allow all on busy_ufo_supplier_payments" ON busy_ufo_supplier_payments FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Expenses
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_expenses' AND policyname = 'Allow all on busy_ufo_expenses') THEN
+        CREATE POLICY "Allow all on busy_ufo_expenses" ON busy_ufo_expenses FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Users & Roles
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'app_users' AND policyname = 'Allow all on app_users') THEN
+        CREATE POLICY "Allow all on app_users" ON app_users FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'roles' AND policyname = 'Allow all on roles') THEN
+        CREATE POLICY "Allow all on roles" ON roles FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'permissions' AND policyname = 'Allow all on permissions') THEN
+        CREATE POLICY "Allow all on permissions" ON permissions FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'role_permissions' AND policyname = 'Allow all on role_permissions') THEN
+        CREATE POLICY "Allow all on role_permissions" ON role_permissions FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'user_company_assignments' AND policyname = 'Allow all on user_company_assignments') THEN
+        CREATE POLICY "Allow all on user_company_assignments" ON user_company_assignments FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'user_permissions' AND policyname = 'Allow all on user_permissions') THEN
+        CREATE POLICY "Allow all on user_permissions" ON user_permissions FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'audit_logs' AND policyname = 'Allow all on audit_logs') THEN
+        CREATE POLICY "Allow all on audit_logs" ON audit_logs FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
 `;
