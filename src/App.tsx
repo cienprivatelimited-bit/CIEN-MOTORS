@@ -165,6 +165,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    document.title = 'UFO Tech solution';
+  }, []);
+
+  useEffect(() => {
     if (session?.company?.id) {
       refreshAllStates(session.company.id);
     }
