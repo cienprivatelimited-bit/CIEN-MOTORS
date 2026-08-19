@@ -17,12 +17,14 @@ import {
   FileSpreadsheet,
   CloudUpload,
   CloudDownload,
-  Activity
+  Activity,
+  BookOpen
 } from 'lucide-react';
 import { AppSettings, InvoicePrintFormat, AuthSession } from '../types';
 import { SUPABASE_SQL_SCHEMA } from '../lib/sqlExport';
 import { testSupabaseConnection, ConnectionTestResult, SupabaseSyncService } from '../lib/supabase';
 import { StorageService } from '../lib/storage';
+import { AccountGroupsModal } from './AccountGroupsModal';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -48,6 +50,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const [formData, setFormData] = useState<AppSettings>({ ...settings });
   const [copiedSql, setCopiedSql] = useState(false);
   const [showSqlModal, setShowSqlModal] = useState(false);
+  const [showAccountGroupsModal, setShowAccountGroupsModal] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -501,6 +504,55 @@ export const Settings: React.FC<SettingsProps> = ({
           </div>
         </div>
 
+        {/* Standard Chart of Account Groups Card */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Chart of Account Groups (29 Standard Groups)</h3>
+                <p className="text-xs text-slate-500">
+                  Inspect the official 29 account groups, balance sheet classifications, normal balances (Dr/Cr), and trade mappings.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowAccountGroupsModal(true)}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-xs cursor-pointer transition-all"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>View 29 Account Groups</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <div className="font-bold text-emerald-800 text-sm">10 Groups</div>
+              <div className="text-emerald-600 text-[11px]">Assets (Dr)</div>
+            </div>
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl">
+              <div className="font-bold text-rose-800 text-sm">9 Groups</div>
+              <div className="text-rose-600 text-[11px]">Liabilities (Cr)</div>
+            </div>
+            <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl">
+              <div className="font-bold text-purple-800 text-sm">3 Groups</div>
+              <div className="text-purple-600 text-[11px]">Equity / Capital (Cr)</div>
+            </div>
+            <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+              <div className="font-bold text-blue-800 text-sm">4 Groups</div>
+              <div className="text-blue-600 text-[11px]">Income / Sales (Cr)</div>
+            </div>
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl col-span-2 sm:col-span-1">
+              <div className="font-bold text-amber-800 text-sm">3 Groups</div>
+              <div className="text-amber-600 text-[11px]">Expenses / Purchase (Dr)</div>
+            </div>
+          </div>
+        </div>
+
         {/* Supabase Integration & Database Controls */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -722,6 +774,12 @@ export const Settings: React.FC<SettingsProps> = ({
           </div>
         </div>
       )}
+
+      {/* Account Groups Table Modal */}
+      <AccountGroupsModal
+        isOpen={showAccountGroupsModal}
+        onClose={() => setShowAccountGroupsModal(false)}
+      />
     </div>
   );
 };

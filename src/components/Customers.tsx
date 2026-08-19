@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Customer, AppSettings, SaleInvoice, CustomerReceipt, AuthSession } from '../types';
 import { checkPermission } from '../lib/permissions';
+import { STANDARD_ACCOUNT_GROUPS } from '../lib/accountGroups';
 
 interface CustomersProps {
   customers: Customer[];
@@ -71,6 +72,7 @@ export const Customers: React.FC<CustomersProps> = ({
       email: '',
       address: '',
       city: 'Colombo',
+      accountGroup: 'Sundry Debtors',
       openingBalance: '0'
     });
     setIsModalOpen(true);
@@ -86,6 +88,7 @@ export const Customers: React.FC<CustomersProps> = ({
       email: cust.email || '',
       address: cust.address || '',
       city: cust.city || 'Colombo',
+      accountGroup: cust.accountGroup || 'Sundry Debtors',
       openingBalance: cust.openingBalance.toString()
     });
     setIsModalOpen(true);
@@ -132,6 +135,7 @@ export const Customers: React.FC<CustomersProps> = ({
       email: formData.email.trim(),
       address: formData.address.trim(),
       city: formData.city.trim(),
+      accountGroup: formData.accountGroup || 'Sundry Debtors',
       openingBalance: Number(formData.openingBalance || 0)
     });
 
@@ -229,9 +233,14 @@ export const Customers: React.FC<CustomersProps> = ({
               <div>
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-mono text-xs font-bold rounded-md">
-                      {cust.code}
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-mono text-xs font-bold rounded-md">
+                        {cust.code}
+                      </span>
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-md border border-emerald-200">
+                        {cust.accountGroup || 'Sundry Debtors'}
+                      </span>
+                    </div>
                     <h3 className="font-bold text-slate-900 text-base mt-1.5">{cust.name}</h3>
                   </div>
 
@@ -394,6 +403,35 @@ export const Customers: React.FC<CustomersProps> = ({
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-200 text-sm focus:border-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Account Group (Chart of Accounts)
+                </label>
+                <select
+                  value={formData.accountGroup}
+                  onChange={(e) => setFormData({ ...formData, accountGroup: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-sm focus:border-blue-500 bg-white"
+                >
+                  <optgroup label="Assets / Trade Receivables (Default)">
+                    {STANDARD_ACCOUNT_GROUPS.filter((g) => g.nature === 'ASSET').map((g) => (
+                      <option key={g.no} value={g.name}>
+                        {g.no}. {g.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Other Account Groups">
+                    {STANDARD_ACCOUNT_GROUPS.filter((g) => g.nature !== 'ASSET').map((g) => (
+                      <option key={g.no} value={g.name}>
+                        {g.no}. {g.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Default: 25. Sundry Debtors (Trade Customers)
+                </p>
               </div>
 
               <div>

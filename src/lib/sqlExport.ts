@@ -40,6 +40,16 @@ CREATE TABLE IF NOT EXISTS companies (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Upgrade existing companies table if created in earlier versions
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS district VARCHAR(100);
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'Sri Lanka';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_vat_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS vat_number VARCHAR(100);
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS default_vat_rate NUMERIC(5, 2) DEFAULT 18.00;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS vat_type VARCHAR(20) DEFAULT 'EXCLUSIVE';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_item_discount_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS default_discount_type VARCHAR(20) DEFAULT 'PERCENT';
+
 -- ------------------------------------------------------------
 -- 2. USERS & ROLES SECURITY TABLES
 -- ------------------------------------------------------------
@@ -112,8 +122,61 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 -- ------------------------------------------------------------
--- 3. MASTER DATA TABLES (CUSTOMERS, SUPPLIERS, PRODUCTS)
+-- 3. CHART OF ACCOUNT GROUPS & MASTER DATA TABLES
 -- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS busy_ufo_account_groups (
+    no INT PRIMARY KEY,
+    name VARCHAR(150) NOT NULL UNIQUE,
+    nature VARCHAR(50) NOT NULL CHECK (nature IN ('ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE')),
+    parent_group VARCHAR(150),
+    category VARCHAR(100),
+    normal_balance VARCHAR(10) NOT NULL CHECK (normal_balance IN ('Dr', 'Cr')),
+    description TEXT,
+    is_subgroup BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed standard 29 Account Groups
+INSERT INTO busy_ufo_account_groups (no, name, nature, parent_group, category, normal_balance, description, is_subgroup)
+VALUES
+(1, 'Bank Accounts', 'ASSET', 'Current Assets', 'Bank & Cash', 'Dr', 'Current and savings bank accounts maintained with commercial banks.', FALSE),
+(2, 'Bank O/D Accounts', 'LIABILITY', 'Loans (Liability)', 'Loans & Borrowings', 'Cr', 'Bank overdraft accounts, credit facilities, and short-term bank borrowings.', FALSE),
+(3, 'Capital Account', 'EQUITY', 'Capital & Equity', 'Capital & Equity', 'Cr', 'Owner''s capital, share capital, proprietor equity, and partner investments.', FALSE),
+(4, 'Cash-in-Hand', 'ASSET', 'Current Assets', 'Bank & Cash', 'Dr', 'Physical cash balances, main cash register, and petty cash accounts.', FALSE),
+(5, 'Current Assets', 'ASSET', 'Assets', 'Current Assets', 'Dr', 'Short-term assets expected to be converted into cash within one fiscal year.', FALSE),
+(6, 'Current Liabilities', 'LIABILITY', 'Liabilities', 'Current Liabilities', 'Cr', 'Short-term financial obligations and debts payable within one fiscal year.', FALSE),
+(7, 'Duties & Taxes', 'LIABILITY', 'Current Liabilities', 'Duties & Taxes', 'Cr', 'Tax payables/receivables including VAT, SVAT, NBT, Income Tax, and Customs duties.', FALSE),
+(8, 'Expenses (Direct / Mfg.)', 'EXPENSE', 'Trading Account', 'Direct Expenses', 'Dr', 'Direct manufacturing costs, direct labor, factory freight, and production overheads.', FALSE),
+(9, 'Expenses (Indirect / Admn.)', 'EXPENSE', 'Profit & Loss Account', 'Indirect Expenses', 'Dr', 'Administrative, selling, distribution, office rent, utilities, and general expenses.', FALSE),
+(10, 'Fixed Assets', 'ASSET', 'Assets', 'Fixed Assets', 'Dr', 'Long-term tangible assets: Land & Buildings, Machinery, Vehicles, Computers, Furniture.', FALSE),
+(11, 'Income (Direct / Opr.)', 'INCOME', 'Trading Account', 'Direct Income', 'Cr', 'Operating revenues generated directly from primary business activities.', FALSE),
+(12, 'Income (Indirect)', 'INCOME', 'Profit & Loss Account', 'Indirect Income', 'Cr', 'Non-operating revenue: Interest received, discounts earned, commissions, exchange gains.', FALSE),
+(13, 'Investments', 'ASSET', 'Assets', 'Investments', 'Dr', 'Long-term and short-term financial investments, fixed deposits, bonds, and shares.', FALSE),
+(14, 'Loans & Advances (Assets)', 'ASSET', 'Current Assets', 'Loans & Advances', 'Dr', 'Loans given to employees, staff salary advances, and recoverable supplier deposits.', FALSE),
+(15, 'Loans (Liability)', 'LIABILITY', 'Liabilities', 'Loans & Borrowings', 'Cr', 'Long-term and medium-term loan borrowings from financial institutions and third parties.', FALSE),
+(16, 'Pre-operative Expenses', 'ASSET', 'Miscellaneous Expenses', 'Other Assets', 'Dr', 'Preliminary and pre-incorporation setup expenses amortized over time.', FALSE),
+(17, 'Profit & Loss', 'EQUITY', 'Reserves & Surplus', 'Capital & Equity', 'Cr', 'Cumulative retained earnings and profit/loss balance brought forward.', FALSE),
+(18, 'Provisions / Expenses Payable', 'LIABILITY', 'Current Liabilities', 'Provisions & Payables', 'Cr', 'Accrued expenses, audit fees payable, salary provisions, and utility bill accruals.', FALSE),
+(19, 'Purchase', 'EXPENSE', 'Trading Account', 'Purchase Accounts', 'Dr', 'Purchase of raw materials, merchandise trading inventory, and purchase returns.', FALSE),
+(20, 'Reserves & Surplus', 'EQUITY', 'Capital Account', 'Capital & Equity', 'Cr', 'General reserves, statutory reserves, revaluation reserves, and retained capital.', FALSE),
+(21, 'Revenue Accounts', 'INCOME', 'Trading / Profit & Loss', 'Sales & Revenue', 'Cr', 'General revenue streams, recurring contract services, and trading income.', FALSE),
+(22, 'Sale', 'INCOME', 'Trading Account', 'Sales & Revenue', 'Cr', 'Product sales, wholesale trading, retail cash sales, and sales returns accounts.', FALSE),
+(23, 'Secured Loans', 'LIABILITY', 'Loans (Liability)', 'Loans & Borrowings', 'Cr', 'Mortgages, bank term loans, and credit facilities backed by collateral or assets.', FALSE),
+(24, 'Sundry Creditors', 'LIABILITY', 'Current Liabilities', 'Trade Creditors (Suppliers)', 'Cr', 'Trade suppliers and vendors from whom goods or services are purchased on credit.', FALSE),
+(25, 'Sundry Debtors', 'ASSET', 'Current Assets', 'Trade Debtors (Customers)', 'Dr', 'Trade customers and clients to whom goods or services are sold on credit terms.', FALSE),
+(26, 'Unsecured Loans', 'LIABILITY', 'Loans (Liability)', 'Loans & Borrowings', 'Cr', 'Director loans, friend/family advances, and non-collateralized borrowing.', FALSE),
+(27, 'Duties & Taxes – related subgroups', 'LIABILITY', 'Duties & Taxes', 'Duties & Taxes', 'Cr', 'Subgroups under tax: VAT Output, VAT Input, WHT, Stamp Duty, Customs Tariff.', TRUE),
+(28, 'Current Assets – related subgroups', 'ASSET', 'Current Assets', 'Current Assets', 'Dr', 'Subgroups under Current Assets: Prepaid Expenses, Security Deposits, Temporary Advances.', TRUE),
+(29, 'Current Liabilities – related subgroups', 'LIABILITY', 'Current Liabilities', 'Current Liabilities', 'Cr', 'Subgroups under Current Liabilities: Customer Advance Deposits, Unearned Revenue.', TRUE)
+ON CONFLICT (no) DO UPDATE SET
+    name = EXCLUDED.name,
+    nature = EXCLUDED.nature,
+    parent_group = EXCLUDED.parent_group,
+    category = EXCLUDED.category,
+    normal_balance = EXCLUDED.normal_balance,
+    description = EXCLUDED.description,
+    is_subgroup = EXCLUDED.is_subgroup;
+
 CREATE TABLE IF NOT EXISTS busy_ufo_settings (
     id VARCHAR(50) PRIMARY KEY DEFAULT 'default_settings',
     company_name TEXT NOT NULL DEFAULT 'Colombo Retailers & Wholesalers',
@@ -142,6 +205,7 @@ CREATE TABLE IF NOT EXISTS busy_ufo_customers (
     address TEXT,
     city VARCHAR(100) DEFAULT 'Colombo',
     district VARCHAR(100) DEFAULT 'Colombo',
+    account_group VARCHAR(100) DEFAULT 'Sundry Debtors',
     opening_balance NUMERIC(12, 2) DEFAULT 0.00,
     current_balance NUMERIC(12, 2) DEFAULT 0.00,
     credit_limit NUMERIC(12, 2) DEFAULT 100000.00,
@@ -150,6 +214,9 @@ CREATE TABLE IF NOT EXISTS busy_ufo_customers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE busy_ufo_customers ADD COLUMN IF NOT EXISTS district VARCHAR(100) DEFAULT 'Colombo';
+ALTER TABLE busy_ufo_customers ADD COLUMN IF NOT EXISTS account_group VARCHAR(100) DEFAULT 'Sundry Debtors';
 
 CREATE TABLE IF NOT EXISTS busy_ufo_suppliers (
     id VARCHAR(50) PRIMARY KEY,
@@ -160,6 +227,7 @@ CREATE TABLE IF NOT EXISTS busy_ufo_suppliers (
     address TEXT,
     city VARCHAR(100) DEFAULT 'Colombo',
     district VARCHAR(100) DEFAULT 'Colombo',
+    account_group VARCHAR(100) DEFAULT 'Sundry Creditors',
     opening_balance NUMERIC(12, 2) DEFAULT 0.00,
     current_balance NUMERIC(12, 2) DEFAULT 0.00,
     is_active BOOLEAN DEFAULT TRUE,
@@ -167,6 +235,9 @@ CREATE TABLE IF NOT EXISTS busy_ufo_suppliers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE busy_ufo_suppliers ADD COLUMN IF NOT EXISTS district VARCHAR(100) DEFAULT 'Colombo';
+ALTER TABLE busy_ufo_suppliers ADD COLUMN IF NOT EXISTS account_group VARCHAR(100) DEFAULT 'Sundry Creditors';
 
 CREATE TABLE IF NOT EXISTS categories (
     id VARCHAR(50) PRIMARY KEY,
@@ -201,6 +272,8 @@ CREATE TABLE IF NOT EXISTS busy_ufo_products (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE busy_ufo_products ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5, 2) DEFAULT 0.00;
 
 -- ------------------------------------------------------------
 -- 4. INVOICES & TRANSACTIONS TABLES
@@ -390,6 +463,7 @@ CREATE INDEX IF NOT EXISTS idx_purchases_date ON busy_ufo_purchases(purchase_dat
 -- 7. ROW LEVEL SECURITY (RLS) POLICIES FOR PUBLIC / ANON ACCESS
 -- ------------------------------------------------------------
 ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE busy_ufo_account_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE busy_ufo_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE busy_ufo_customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE busy_ufo_suppliers ENABLE ROW LEVEL SECURITY;
@@ -414,6 +488,10 @@ BEGIN
     -- Companies
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'companies' AND policyname = 'Allow all on companies') THEN
         CREATE POLICY "Allow all on companies" ON companies FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- Account Groups
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_account_groups' AND policyname = 'Allow all on busy_ufo_account_groups') THEN
+        CREATE POLICY "Allow all on busy_ufo_account_groups" ON busy_ufo_account_groups FOR ALL USING (true) WITH CHECK (true);
     END IF;
     -- Settings
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'busy_ufo_settings' AND policyname = 'Allow all on busy_ufo_settings') THEN

@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { StorageService } from './storage';
 import { AuthService } from './auth';
+import { detectMasterTypeFromGroup } from './accountGroups';
 
 export interface ColumnMapping {
   excelColumn: string;
@@ -117,33 +118,10 @@ export function parseNumeric(val: any): number {
 }
 
 /**
- * Auto detects master type based on BUSY group names.
+ * Auto detects master type based on standard 29 BUSY account group names.
  */
 export function detectMasterType(groupName: string): 'CUSTOMER' | 'SUPPLIER' | 'LEDGER' {
-  const norm = (groupName || '').toLowerCase().trim();
-  if (!norm) return 'LEDGER';
-
-  if (
-    norm.includes('debtor') ||
-    norm.includes('customer') ||
-    norm.includes('receivable') ||
-    norm.includes('client') ||
-    norm === 'sundry debtors'
-  ) {
-    return 'CUSTOMER';
-  }
-
-  if (
-    norm.includes('creditor') ||
-    norm.includes('supplier') ||
-    norm.includes('payable') ||
-    norm.includes('vendor') ||
-    norm === 'sundry creditors'
-  ) {
-    return 'SUPPLIER';
-  }
-
-  return 'LEDGER';
+  return detectMasterTypeFromGroup(groupName);
 }
 
 export const ExcelImportService = {

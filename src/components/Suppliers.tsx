@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Supplier, AppSettings, PurchaseInvoice, SupplierPayment, AuthSession } from '../types';
 import { checkPermission } from '../lib/permissions';
+import { STANDARD_ACCOUNT_GROUPS } from '../lib/accountGroups';
 
 interface SuppliersProps {
   suppliers: Supplier[];
@@ -73,6 +74,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({
       email: '',
       address: '',
       city: 'Colombo',
+      accountGroup: 'Sundry Creditors',
       openingBalance: '0'
     });
     setIsModalOpen(true);
@@ -89,6 +91,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({
       email: supp.email || '',
       address: supp.address || '',
       city: supp.city || 'Colombo',
+      accountGroup: supp.accountGroup || 'Sundry Creditors',
       openingBalance: supp.openingBalance.toString()
     });
     setIsModalOpen(true);
@@ -136,6 +139,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({
       email: formData.email.trim(),
       address: formData.address.trim(),
       city: formData.city.trim(),
+      accountGroup: formData.accountGroup || 'Sundry Creditors',
       openingBalance: Number(formData.openingBalance || 0)
     });
 
@@ -228,9 +232,14 @@ export const Suppliers: React.FC<SuppliersProps> = ({
               <div>
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-mono text-xs font-bold rounded-md">
-                      {supp.code}
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-mono text-xs font-bold rounded-md">
+                        {supp.code}
+                      </span>
+                      <span className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-bold rounded-md border border-rose-200">
+                        {supp.accountGroup || 'Sundry Creditors'}
+                      </span>
+                    </div>
                     <h3 className="font-bold text-slate-900 text-base mt-1.5">{supp.name}</h3>
                     {supp.companyName && (
                       <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
@@ -413,6 +422,35 @@ export const Suppliers: React.FC<SuppliersProps> = ({
                     className="w-full p-2.5 rounded-xl border border-slate-200 text-sm focus:border-blue-500"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Account Group (Chart of Accounts)
+                </label>
+                <select
+                  value={formData.accountGroup}
+                  onChange={(e) => setFormData({ ...formData, accountGroup: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-sm focus:border-blue-500 bg-white"
+                >
+                  <optgroup label="Liabilities / Trade Payables (Default)">
+                    {STANDARD_ACCOUNT_GROUPS.filter((g) => g.nature === 'LIABILITY').map((g) => (
+                      <option key={g.no} value={g.name}>
+                        {g.no}. {g.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Other Account Groups">
+                    {STANDARD_ACCOUNT_GROUPS.filter((g) => g.nature !== 'LIABILITY').map((g) => (
+                      <option key={g.no} value={g.name}>
+                        {g.no}. {g.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Default: 24. Sundry Creditors (Trade Suppliers)
+                </p>
               </div>
 
               <div>

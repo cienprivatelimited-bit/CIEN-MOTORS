@@ -485,3 +485,17 @@ export interface TransactionRecord {
   amount: number;
   paymentType: string;
 }
+
+export type AccountNature = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
+
+export interface AccountGroupDefinition {
+  no: number;
+  name: string;
+  nature: AccountNature;
+  parentGroup?: string;
+  category: string;
+  normalBalance: 'Dr' | 'Cr';
+  description: string;
+  isSubgroup?: boolean;
+}
+

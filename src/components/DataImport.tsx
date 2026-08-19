@@ -25,7 +25,8 @@ import {
   Briefcase,
   Sliders,
   Eye,
-  FileText
+  FileText,
+  BookOpen
 } from 'lucide-react';
 import {
   Company,
@@ -43,6 +44,7 @@ import {
   MASTER_TARGET_FIELDS,
   STOCK_TARGET_FIELDS
 } from '../lib/excelImport';
+import { AccountGroupsModal } from './AccountGroupsModal';
 
 interface DataImportProps {
   session: AuthSession;
@@ -66,6 +68,7 @@ export const DataImport: React.FC<DataImportProps> = ({
 
   // Wizard Steps
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [showAccountGroupsModal, setShowAccountGroupsModal] = useState(false);
 
   // Import Options
   const [importType, setImportType] = useState<ImportType>('MASTER_BALANCE');
@@ -495,8 +498,15 @@ export const DataImport: React.FC<DataImportProps> = ({
 
                 {/* Company Export Buttons */}
                 <div className="pt-1 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/60">
-                  <span className="text-xs font-semibold text-slate-500">Export Active Company Data:</span>
+                  <span className="text-xs font-semibold text-slate-500">Export & Reference Tools:</span>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAccountGroupsModal(true)}
+                      className="px-3 py-1 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-800 font-semibold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-emerald-600" /> View 29 Account Groups Chart
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1236,6 +1246,12 @@ export const DataImport: React.FC<DataImportProps> = ({
           </div>
         </div>
       )}
+
+      {/* 29 Standard Account Groups Reference Modal */}
+      <AccountGroupsModal
+        isOpen={showAccountGroupsModal}
+        onClose={() => setShowAccountGroupsModal(false)}
+      />
     </div>
   );
 };
