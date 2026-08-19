@@ -77,13 +77,34 @@ export interface Supplier {
   createdAt: string;
 }
 
+export interface UnitDefinition {
+  code: string; // e.g. "Nos", "Pcs", "Kg", "Box", "Ctn"
+  name: string; // e.g. "Numbers", "Pieces", "Kilograms", "Box", "Carton"
+  category: 'COUNT' | 'WEIGHT' | 'VOLUME' | 'LENGTH' | 'PACKAGING';
+  isSystem?: boolean;
+}
+
+export interface UnitConversionRule {
+  id: string;
+  companyId?: string;
+  mainUnit: string;
+  secondaryUnit: string;
+  conversionFactor: number; // 1 mainUnit = conversionFactor * secondaryUnit
+  description?: string;
+  isSystem?: boolean;
+}
+
 export interface Product {
   id: string;
   companyId?: string;
   code: string; // Must be unique per company
   name: string; // Must be unique per company
   category: string;
-  unit?: string; // e.g. Pcs, Nos, Kg, Box
+  unit?: string; // Main Unit e.g. Pcs, Nos, Kg, Box, Ctn
+  primaryUnit?: string;
+  secondaryUnit?: string; // Alternate Unit e.g. Gm, Pcs, Nos
+  conversionFactor?: number; // e.g. 1 Box = 12 Pcs
+  secondarySellingPrice?: number;
   costPrice: number;
   sellingPrice: number;
   currentStock: number;
@@ -106,6 +127,10 @@ export interface SaleItem {
   productCode: string;
   productName: string;
   quantity: number;
+  unit?: string;
+  secondaryUnit?: string;
+  conversionFactor?: number;
+  baseQuantity?: number;
   unitPrice: number;
   discount?: number;
   discountType?: 'PERCENT' | 'FIXED';
@@ -135,6 +160,10 @@ export interface PurchaseItem {
   productCode: string;
   productName: string;
   quantity: number;
+  unit?: string;
+  secondaryUnit?: string;
+  conversionFactor?: number;
+  baseQuantity?: number;
   unitCost: number;
   discount?: number;
   discountType?: 'PERCENT' | 'FIXED';

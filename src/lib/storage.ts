@@ -1119,56 +1119,56 @@ export const StorageService = {
 
       const pulledCounts: Record<string, number> = {};
 
-      if (remoteProducts && remoteProducts.length > 0) {
+      if (remoteProducts !== null) {
         const local = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, []);
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.PRODUCTS, [...remoteProducts, ...otherComp]);
         pulledCounts.products = remoteProducts.length;
       }
 
-      if (remoteCustomers && remoteCustomers.length > 0) {
+      if (remoteCustomers !== null) {
         const local = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
         const otherComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.CUSTOMERS, [...remoteCustomers, ...otherComp]);
         pulledCounts.customers = remoteCustomers.length;
       }
 
-      if (remoteSuppliers && remoteSuppliers.length > 0) {
+      if (remoteSuppliers !== null) {
         const local = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
         const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.SUPPLIERS, [...remoteSuppliers, ...otherComp]);
         pulledCounts.suppliers = remoteSuppliers.length;
       }
 
-      if (remoteSales && remoteSales.length > 0) {
+      if (remoteSales !== null) {
         const local = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, []);
         const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.SALES, [...remoteSales, ...otherComp]);
         pulledCounts.sales = remoteSales.length;
       }
 
-      if (remotePurchases && remotePurchases.length > 0) {
+      if (remotePurchases !== null) {
         const local = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, []);
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.PURCHASES, [...remotePurchases, ...otherComp]);
         pulledCounts.purchases = remotePurchases.length;
       }
 
-      if (remoteReceipts && remoteReceipts.length > 0) {
+      if (remoteReceipts !== null) {
         const local = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, []);
         const otherComp = companyId ? local.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.RECEIPTS, [...remoteReceipts, ...otherComp]);
         pulledCounts.receipts = remoteReceipts.length;
       }
 
-      if (remotePayments && remotePayments.length > 0) {
+      if (remotePayments !== null) {
         const local = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, []);
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.PAYMENTS, [...remotePayments, ...otherComp]);
         pulledCounts.payments = remotePayments.length;
       }
 
-      if (remoteExpenses && remoteExpenses.length > 0) {
+      if (remoteExpenses !== null) {
         const local = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, []);
         const otherComp = companyId ? local.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
         setItem(STORAGE_KEYS.EXPENSES, [...remoteExpenses, ...otherComp]);

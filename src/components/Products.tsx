@@ -9,10 +9,14 @@ import {
   Tag,
   Boxes,
   X,
-  AlertCircle
+  AlertCircle,
+  ArrowRightLeft,
+  Sparkles
 } from 'lucide-react';
 import { Product, AppSettings, AuthSession } from '../types';
 import { checkPermission } from '../lib/permissions';
+import { STANDARD_SIMPLE_UNITS, UnitService } from '../lib/units';
+import { UnitManagement } from './UnitManagement';
 
 interface ProductsProps {
   products: Product[];
@@ -37,6 +41,7 @@ export const Products: React.FC<ProductsProps> = ({
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW' | 'OUT'>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isUnitManagerOpen, setIsUnitManagerOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -50,6 +55,10 @@ export const Products: React.FC<ProductsProps> = ({
     code: '',
     name: '',
     category: 'General',
+    unit: 'Nos',
+    hasSecondaryUnit: false,
+    secondaryUnit: 'Pcs',
+    conversionFactor: '12',
     costPrice: '0',
     sellingPrice: '0',
     currentStock: '0',
@@ -65,6 +74,10 @@ export const Products: React.FC<ProductsProps> = ({
       code: `PROD-${String(codeCount).padStart(3, '0')}`,
       name: '',
       category: 'General',
+      unit: 'Nos',
+      hasSecondaryUnit: false,
+      secondaryUnit: 'Pcs',
+      conversionFactor: '12',
       costPrice: '',
       sellingPrice: '',
       currentStock: '0',
@@ -75,10 +88,15 @@ export const Products: React.FC<ProductsProps> = ({
 
   const handleOpenEdit = (prod: Product) => {
     setEditingProduct(prod);
+    const hasSec = Boolean(prod.secondaryUnit && prod.conversionFactor && prod.conversionFactor > 1);
     setFormData({
       code: prod.code,
       name: prod.name,
       category: prod.category || 'General',
+      unit: prod.unit || prod.primaryUnit || 'Nos',
+      hasSecondaryUnit: hasSec,
+      secondaryUnit: prod.secondaryUnit || 'Pcs',
+      conversionFactor: prod.conversionFactor ? prod.conversionFactor.toString() : '12',
       costPrice: prod.costPrice.toString(),
       sellingPrice: prod.sellingPrice.toString(),
       currentStock: prod.currentStock.toString(),
@@ -94,6 +112,7 @@ export const Products: React.FC<ProductsProps> = ({
     const sellNum = Number(formData.sellingPrice || 0);
     const stockNum = Number(formData.currentStock || 0);
     const reorderNum = Number(formData.reorderLevel || 0);
+    const factorNum = formData.hasSecondaryUnit ? Number(formData.conversionFactor || 1) : 1;
 
     if (sellNum < costNum) {
       if (
@@ -116,6 +135,10 @@ export const Products: React.FC<ProductsProps> = ({
       code: formData.code.trim().toUpperCase(),
       name: formData.name.trim(),
       category: formData.category.trim() || 'General',
+      unit: formData.unit,
+      primaryUnit: formData.unit,
+      secondaryUnit: formData.hasSecondaryUnit ? formData.secondaryUnit : undefined,
+      conversionFactor: formData.hasSecondaryUnit ? factorNum : undefined,
       costPrice: costNum,
       sellingPrice: sellNum,
       currentStock: stockNum,
@@ -168,7 +191,15 @@ export const Products: React.FC<ProductsProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsUnitManagerOpen(true)}
+            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3.5 py-2 rounded-xl text-xs border border-slate-300 transition-all cursor-pointer"
+          >
+            <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+            <span>Units & Conversions</span>
+          </button>
+
           <div className="bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl text-right">
             <span className="text-[10px] font-bold text-amber-700 uppercase block">Low Stock Items</span>
             <span className="text-lg font-black text-amber-900 font-mono">
@@ -260,6 +291,7 @@ export const Products: React.FC<ProductsProps> = ({
                   <th className="p-4">Code</th>
                   <th className="p-4">Product Name</th>
                   <th className="p-4">Category</th>
+                  <th className="p-4 text-center">UOM / Unit</th>
                   <th className="p-4 text-right">Cost Price</th>
                   <th className="p-4 text-right">Selling Price</th>
                   <th className="p-4 text-center">Stock Level</th>
@@ -270,24 +302,44 @@ export const Products: React.FC<ProductsProps> = ({
                 {filteredProducts.map((prod) => {
                   const isLow = prod.currentStock <= prod.reorderLevel && prod.currentStock > 0;
                   const isOut = prod.currentStock <= 0;
+                  const unitLabel = prod.unit || prod.primaryUnit || 'Nos';
+                  const hasSec = Boolean(prod.secondaryUnit && prod.conversionFactor && prod.conversionFactor > 1);
+
+                  let stockDisplay = `${prod.currentStock} ${unitLabel}`;
+                  if (hasSec && prod.secondaryUnit && prod.conversionFactor) {
+                    const secQty = prod.currentStock * prod.conversionFactor;
+                    stockDisplay = `${prod.currentStock} ${unitLabel} (${secQty} ${prod.secondaryUnit})`;
+                  }
 
                   return (
                     <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-4 font-mono font-bold text-slate-900">{prod.code}</td>
                       <td className="p-4">
                         <div className="font-bold text-slate-900">{prod.name}</div>
-                        <div className="text-xs text-slate-400">Reorder Level: {prod.reorderLevel} units</div>
+                        <div className="text-xs text-slate-400">Reorder Level: {prod.reorderLevel} {unitLabel}</div>
                       </td>
                       <td className="p-4">
                         <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">
                           {prod.category}
                         </span>
                       </td>
+                      <td className="p-4 text-center">
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-800 rounded font-mono text-xs font-bold border border-blue-200">
+                          {unitLabel}
+                        </span>
+                        {hasSec && (
+                          <span className="block text-[10px] text-slate-500 font-medium mt-0.5">
+                            1 {unitLabel} = {prod.conversionFactor} {prod.secondaryUnit}
+                          </span>
+                        )}
+                      </td>
                       <td className="p-4 text-right font-mono">
                         {settings.currencySymbol} {prod.costPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <span className="text-[10px] text-slate-400 block font-sans">/{unitLabel}</span>
                       </td>
                       <td className="p-4 text-right font-mono font-bold text-slate-900">
                         {settings.currencySymbol} {prod.sellingPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <span className="text-[10px] text-slate-400 block font-sans font-normal">/{unitLabel}</span>
                       </td>
                       <td className="p-4 text-center">
                         <div className="inline-flex items-center gap-1.5">
@@ -300,7 +352,7 @@ export const Products: React.FC<ProductsProps> = ({
                                 : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                             }`}
                           >
-                            {prod.currentStock} units
+                            {stockDisplay}
                           </span>
                         </div>
                       </td>
@@ -393,6 +445,80 @@ export const Products: React.FC<ProductsProps> = ({
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full p-2.5 rounded-xl border border-slate-200 text-sm focus:border-blue-500 font-bold"
                 />
+              </div>
+
+              {/* Unit Selection & Compound Unit Conversion */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Primary Unit (UOM) *
+                    </label>
+                    <select
+                      value={formData.unit}
+                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 text-sm bg-white font-bold text-blue-700 focus:border-blue-500"
+                    >
+                      {STANDARD_SIMPLE_UNITS.map((u) => (
+                        <option key={u.code} value={u.code}>
+                          {u.code} ({u.name})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col justify-end">
+                    <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700 pb-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.hasSecondaryUnit}
+                        onChange={(e) => setFormData({ ...formData, hasSecondaryUnit: e.target.checked })}
+                        className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                      />
+                      <span>Enable Alternate Unit</span>
+                    </label>
+                  </div>
+                </div>
+
+                {formData.hasSecondaryUnit && (
+                  <div className="pt-2 border-t border-slate-200 grid grid-cols-2 gap-3 animate-in fade-in">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        1 {formData.unit} = Factor (X)
+                      </label>
+                      <input
+                        type="number"
+                        min="0.001"
+                        step="any"
+                        placeholder="e.g. 12"
+                        value={formData.conversionFactor}
+                        onChange={(e) => setFormData({ ...formData, conversionFactor: e.target.value })}
+                        className="w-full p-2 rounded-xl border border-slate-200 text-xs font-mono font-bold bg-white focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                        Secondary Unit
+                      </label>
+                      <select
+                        value={formData.secondaryUnit}
+                        onChange={(e) => setFormData({ ...formData, secondaryUnit: e.target.value })}
+                        className="w-full p-2 rounded-xl border border-slate-200 text-xs bg-white font-bold text-slate-800 focus:border-blue-500"
+                      >
+                        {STANDARD_SIMPLE_UNITS.map((u) => (
+                          <option key={u.code} value={u.code}>
+                            {u.code} ({u.name})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-span-2 text-[11px] font-medium text-blue-900 bg-blue-100/60 p-2 rounded-lg text-center">
+                      Conversion Formula: <strong>1 {formData.unit} = {formData.conversionFactor || 1} {formData.secondaryUnit}</strong>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -509,6 +635,13 @@ export const Products: React.FC<ProductsProps> = ({
           </div>
         </div>
       )}
+      {/* Unit Management Modal */}
+      <UnitManagement
+        settings={settings}
+        isOpen={isUnitManagerOpen}
+        onClose={() => setIsUnitManagerOpen(false)}
+        showToast={showToast}
+      />
     </div>
   );
 };
