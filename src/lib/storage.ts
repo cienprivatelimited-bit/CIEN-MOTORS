@@ -44,10 +44,25 @@ const STORAGE_KEYS = {
   LEDGERS: 'busy_ufo_ledgers',
   OPENING_JOURNALS: 'busy_ufo_opening_journals',
   WAREHOUSES: 'busy_ufo_warehouses',
-  IMPORT_HISTORY: 'busy_ufo_import_history'
+  IMPORT_HISTORY: 'busy_ufo_import_history',
+  DELETED_IDS: 'busy_ufo_deleted_ids'
 };
 
 const DEFAULT_COMPANY_ID = 'comp-1';
+
+function getDeletedIds(): Set<string> {
+  const raw = getItem<string[]>(STORAGE_KEYS.DELETED_IDS, []);
+  return new Set(Array.isArray(raw) ? raw : []);
+}
+
+function addDeletedId(id: string): void {
+  if (!id) return;
+  const set = getDeletedIds();
+  if (!set.has(id)) {
+    set.add(id);
+    setItem(STORAGE_KEYS.DELETED_IDS, Array.from(set));
+  }
+}
 
 // One-time purge of legacy demo records if detected
 function purgeLegacyDemoData(): void {
@@ -194,7 +209,8 @@ export const StorageService = {
   // --- CUSTOMERS ---
   getCustomers(companyId?: string): Customer[] {
     const raw = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((c) => c && c.id && !deleted.has(c.id));
     if (!companyId) return all;
     return all.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -251,6 +267,7 @@ export const StorageService = {
   },
 
   deleteCustomer(id: string): void {
+    addDeletedId(id);
     const all = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS).filter((c) => c.id !== id);
     setItem(STORAGE_KEYS.CUSTOMERS, all);
     SupabaseSyncService.deleteCustomer(id);
@@ -259,7 +276,8 @@ export const StorageService = {
   // --- SUPPLIERS ---
   getSuppliers(companyId?: string): Supplier[] {
     const raw = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((s) => s && s.id && !deleted.has(s.id));
     if (!companyId) return all;
     return all.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -314,6 +332,7 @@ export const StorageService = {
   },
 
   deleteSupplier(id: string): void {
+    addDeletedId(id);
     const all = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS).filter((s) => s.id !== id);
     setItem(STORAGE_KEYS.SUPPLIERS, all);
     SupabaseSyncService.deleteSupplier(id);
@@ -322,7 +341,8 @@ export const StorageService = {
   // --- PRODUCTS ---
   getProducts(companyId?: string): Product[] {
     const raw = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((p) => p && p.id && !deleted.has(p.id));
     if (!companyId) return all;
     return all.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -405,6 +425,7 @@ export const StorageService = {
   },
 
   deleteProduct(id: string): void {
+    addDeletedId(id);
     const all = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS).filter((p) => p.id !== id);
     setItem(STORAGE_KEYS.PRODUCTS, all);
     SupabaseSyncService.deleteProduct(id);
@@ -413,7 +434,8 @@ export const StorageService = {
   // --- SALES & INVOICES ---
   getSales(companyId?: string): SaleInvoice[] {
     const raw = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((s) => s && s.id && !deleted.has(s.id));
     if (!companyId) return all;
     return all.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -492,45 +514,49 @@ export const StorageService = {
   },
 
   deleteSaleInvoice(id: string): void {
-    const sales = this.getSales();
+    addDeletedId(id);
+    const sales = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);
     const products = this.getProducts();
     const customers = this.getCustomers();
 
     const targetIndex = sales.findIndex((s) => s.id === id);
-    if (targetIndex === -1) return;
+    if (targetIndex !== -1) {
+      const target = sales[targetIndex];
 
-    const target = sales[targetIndex];
-
-    // Restore stock
-    for (const item of target.items) {
-      const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
-      if (pIndex !== -1) {
-        products[pIndex].currentStock += Number(item.quantity);
+      // Restore stock
+      for (const item of target.items) {
+        const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
+        if (pIndex !== -1) {
+          products[pIndex].currentStock += Number(item.quantity);
+        }
       }
-    }
-    setItem(STORAGE_KEYS.PRODUCTS, products);
+      setItem(STORAGE_KEYS.PRODUCTS, products);
 
-    // Revert Customer Outstanding
-    if (target.customerId && target.dueAmount > 0) {
-      const cIndex = customers.findIndex((c) => c.id === target.customerId);
-      if (cIndex !== -1) {
-        customers[cIndex].outstandingBalance = Math.max(
-          0,
-          customers[cIndex].outstandingBalance - Number(target.dueAmount)
-        );
-        setItem(STORAGE_KEYS.CUSTOMERS, customers);
+      // Revert Customer Outstanding
+      if (target.customerId && target.dueAmount > 0) {
+        const cIndex = customers.findIndex((c) => c.id === target.customerId);
+        if (cIndex !== -1) {
+          customers[cIndex].outstandingBalance = Math.max(
+            0,
+            customers[cIndex].outstandingBalance - Number(target.dueAmount)
+          );
+          setItem(STORAGE_KEYS.CUSTOMERS, customers);
+        }
       }
+
+      sales.splice(targetIndex, 1);
     }
 
-    sales.splice(targetIndex, 1);
-    setItem(STORAGE_KEYS.SALES, sales);
+    const cleanSales = sales.filter((s) => s.id !== id);
+    setItem(STORAGE_KEYS.SALES, cleanSales);
     SupabaseSyncService.deleteSaleInvoice(id);
   },
 
   // --- PURCHASES ---
   getPurchases(companyId?: string): PurchaseInvoice[] {
     const raw = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, INITIAL_PURCHASES);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((p) => p && p.id && !deleted.has(p.id));
     if (!companyId) return all;
     return all.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -593,45 +619,49 @@ export const StorageService = {
   },
 
   deletePurchaseInvoice(id: string): void {
-    const purchases = this.getPurchases();
+    addDeletedId(id);
+    const purchases = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, INITIAL_PURCHASES);
     const products = this.getProducts();
     const suppliers = this.getSuppliers();
 
     const targetIndex = purchases.findIndex((p) => p.id === id);
-    if (targetIndex === -1) return;
+    if (targetIndex !== -1) {
+      const target = purchases[targetIndex];
 
-    const target = purchases[targetIndex];
-
-    // Revert stock (subtract added stock)
-    for (const item of target.items) {
-      const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
-      if (pIndex !== -1) {
-        products[pIndex].currentStock -= Number(item.quantity);
+      // Revert stock (subtract added stock)
+      for (const item of target.items) {
+        const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
+        if (pIndex !== -1) {
+          products[pIndex].currentStock -= Number(item.quantity);
+        }
       }
-    }
-    setItem(STORAGE_KEYS.PRODUCTS, products);
+      setItem(STORAGE_KEYS.PRODUCTS, products);
 
-    // Revert Supplier Payable
-    if (target.supplierId && target.dueAmount > 0) {
-      const sIndex = suppliers.findIndex((s) => s.id === target.supplierId);
-      if (sIndex !== -1) {
-        suppliers[sIndex].payableBalance = Math.max(
-          0,
-          suppliers[sIndex].payableBalance - Number(target.dueAmount)
-        );
-        setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
+      // Revert Supplier Payable
+      if (target.supplierId && target.dueAmount > 0) {
+        const sIndex = suppliers.findIndex((s) => s.id === target.supplierId);
+        if (sIndex !== -1) {
+          suppliers[sIndex].payableBalance = Math.max(
+            0,
+            suppliers[sIndex].payableBalance - Number(target.dueAmount)
+          );
+          setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
+        }
       }
+
+      purchases.splice(targetIndex, 1);
     }
 
-    purchases.splice(targetIndex, 1);
-    setItem(STORAGE_KEYS.PURCHASES, purchases);
+    const cleanPurchases = purchases.filter((p) => p.id !== id);
+    setItem(STORAGE_KEYS.PURCHASES, cleanPurchases);
     SupabaseSyncService.deletePurchaseInvoice(id);
   },
 
   // --- CUSTOMER RECEIPTS ---
   getReceipts(companyId?: string): CustomerReceipt[] {
     const raw = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, INITIAL_RECEIPTS);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((r) => r && r.id && !deleted.has(r.id));
     if (!companyId) return all;
     return all.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -693,45 +723,49 @@ export const StorageService = {
   },
 
   deleteCustomerReceipt(id: string): void {
-    const receipts = this.getReceipts();
+    addDeletedId(id);
+    const receipts = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, INITIAL_RECEIPTS);
     const customers = this.getCustomers();
     const sales = this.getSales();
 
     const targetIndex = receipts.findIndex((r) => r.id === id);
-    if (targetIndex === -1) return;
+    if (targetIndex !== -1) {
+      const target = receipts[targetIndex];
 
-    const target = receipts[targetIndex];
+      // Revert Customer Outstanding (add back received amount)
+      const cIndex = customers.findIndex((c) => c.id === target.customerId);
+      if (cIndex !== -1) {
+        customers[cIndex].outstandingBalance += Number(target.amount);
+        setItem(STORAGE_KEYS.CUSTOMERS, customers);
+      }
 
-    // Revert Customer Outstanding (add back received amount)
-    const cIndex = customers.findIndex((c) => c.id === target.customerId);
-    if (cIndex !== -1) {
-      customers[cIndex].outstandingBalance += Number(target.amount);
-      setItem(STORAGE_KEYS.CUSTOMERS, customers);
-    }
-
-    // Revert invoice allocations
-    if (target.allocations && target.allocations.length > 0) {
-      for (const alloc of target.allocations) {
-        if (alloc.allocatedAmount > 0) {
-          const sIndex = sales.findIndex((s) => s.id === alloc.invoiceId);
-          if (sIndex !== -1) {
-            sales[sIndex].paidAmount = Math.max(0, Number((sales[sIndex].paidAmount - alloc.allocatedAmount).toFixed(2)));
-            sales[sIndex].dueAmount = Math.max(0, Number((sales[sIndex].grandTotal - sales[sIndex].paidAmount).toFixed(2)));
+      // Revert invoice allocations
+      if (target.allocations && target.allocations.length > 0) {
+        for (const alloc of target.allocations) {
+          if (alloc.allocatedAmount > 0) {
+            const sIndex = sales.findIndex((s) => s.id === alloc.invoiceId);
+            if (sIndex !== -1) {
+              sales[sIndex].paidAmount = Math.max(0, Number((sales[sIndex].paidAmount - alloc.allocatedAmount).toFixed(2)));
+              sales[sIndex].dueAmount = Math.max(0, Number((sales[sIndex].grandTotal - sales[sIndex].paidAmount).toFixed(2)));
+            }
           }
         }
+        setItem(STORAGE_KEYS.SALES, sales);
       }
-      setItem(STORAGE_KEYS.SALES, sales);
+
+      receipts.splice(targetIndex, 1);
     }
 
-    receipts.splice(targetIndex, 1);
-    setItem(STORAGE_KEYS.RECEIPTS, receipts);
+    const cleanReceipts = receipts.filter((r) => r.id !== id);
+    setItem(STORAGE_KEYS.RECEIPTS, cleanReceipts);
     SupabaseSyncService.deleteReceipt(id);
   },
 
   // --- SUPPLIER PAYMENTS ---
   getPayments(companyId?: string): SupplierPayment[] {
     const raw = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, INITIAL_PAYMENTS);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((p) => p && p.id && !deleted.has(p.id));
     if (!companyId) return all;
     return all.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -793,45 +827,49 @@ export const StorageService = {
   },
 
   deleteSupplierPayment(id: string): void {
-    const payments = this.getPayments();
+    addDeletedId(id);
+    const payments = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, INITIAL_PAYMENTS);
     const suppliers = this.getSuppliers();
     const purchases = this.getPurchases();
 
     const targetIndex = payments.findIndex((p) => p.id === id);
-    if (targetIndex === -1) return;
+    if (targetIndex !== -1) {
+      const target = payments[targetIndex];
 
-    const target = payments[targetIndex];
+      // Revert Supplier Payable (add back paid amount)
+      const sIndex = suppliers.findIndex((s) => s.id === target.supplierId);
+      if (sIndex !== -1) {
+        suppliers[sIndex].payableBalance += Number(target.amount);
+        setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
+      }
 
-    // Revert Supplier Payable (add back paid amount)
-    const sIndex = suppliers.findIndex((s) => s.id === target.supplierId);
-    if (sIndex !== -1) {
-      suppliers[sIndex].payableBalance += Number(target.amount);
-      setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
-    }
-
-    // Revert purchase bill allocations
-    if (target.allocations && target.allocations.length > 0) {
-      for (const alloc of target.allocations) {
-        if (alloc.allocatedAmount > 0) {
-          const pIndex = purchases.findIndex((p) => p.id === alloc.purchaseId);
-          if (pIndex !== -1) {
-            purchases[pIndex].paidAmount = Math.max(0, Number((purchases[pIndex].paidAmount - alloc.allocatedAmount).toFixed(2)));
-            purchases[pIndex].dueAmount = Math.max(0, Number((purchases[pIndex].grandTotal - purchases[pIndex].paidAmount).toFixed(2)));
+      // Revert purchase bill allocations
+      if (target.allocations && target.allocations.length > 0) {
+        for (const alloc of target.allocations) {
+          if (alloc.allocatedAmount > 0) {
+            const pIndex = purchases.findIndex((p) => p.id === alloc.purchaseId);
+            if (pIndex !== -1) {
+              purchases[pIndex].paidAmount = Math.max(0, Number((purchases[pIndex].paidAmount - alloc.allocatedAmount).toFixed(2)));
+              purchases[pIndex].dueAmount = Math.max(0, Number((purchases[pIndex].grandTotal - purchases[pIndex].paidAmount).toFixed(2)));
+            }
           }
         }
+        setItem(STORAGE_KEYS.PURCHASES, purchases);
       }
-      setItem(STORAGE_KEYS.PURCHASES, purchases);
+
+      payments.splice(targetIndex, 1);
     }
 
-    payments.splice(targetIndex, 1);
-    setItem(STORAGE_KEYS.PAYMENTS, payments);
+    const cleanPayments = payments.filter((p) => p.id !== id);
+    setItem(STORAGE_KEYS.PAYMENTS, cleanPayments);
     SupabaseSyncService.deletePayment(id);
   },
 
   // --- EXPENSES ---
   getExpenses(companyId?: string): Expense[] {
     const raw = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
-    const all = dedupeItems(raw);
+    const deleted = getDeletedIds();
+    const all = dedupeItems(raw).filter((e) => e && e.id && !deleted.has(e.id));
     if (!companyId) return all;
     return all.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -863,12 +901,10 @@ export const StorageService = {
   },
 
   deleteExpense(id: string): void {
-    const expenses = this.getExpenses();
-    const targetIndex = expenses.findIndex((e) => e.id === id);
-    if (targetIndex === -1) return;
-
-    expenses.splice(targetIndex, 1);
-    setItem(STORAGE_KEYS.EXPENSES, expenses);
+    addDeletedId(id);
+    const expenses = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
+    const cleanExpenses = expenses.filter((e) => e.id !== id);
+    setItem(STORAGE_KEYS.EXPENSES, cleanExpenses);
     SupabaseSyncService.deleteExpense(id);
   },
 
@@ -1191,7 +1227,7 @@ export const StorageService = {
   // --- MULTI-DEVICE CLOUD PULL ---
   async pullFromSupabase(companyId?: string): Promise<{ success: boolean; pulledCounts?: Record<string, number>; error?: string }> {
     try {
-      const [remoteCompanies, remoteProducts, remoteCustomers, remoteSuppliers, remoteSales, remotePurchases, remoteReceipts, remotePayments, remoteExpenses] = await Promise.all([
+      const [rawCompanies, rawProducts, rawCustomers, rawSuppliers, rawSales, rawPurchases, rawReceipts, rawPayments, rawExpenses] = await Promise.all([
         SupabaseSyncService.fetchAllRemoteCompanies(),
         SupabaseSyncService.fetchAllRemoteProducts(companyId),
         SupabaseSyncService.fetchAllRemoteCustomers(companyId),
@@ -1202,6 +1238,17 @@ export const StorageService = {
         SupabaseSyncService.fetchAllRemotePayments(companyId),
         SupabaseSyncService.fetchAllRemoteExpenses(companyId)
       ]);
+
+      const deletedIds = getDeletedIds();
+      const remoteCompanies = rawCompanies ? rawCompanies.filter((r) => !deletedIds.has(r.id)) : null;
+      const remoteProducts = rawProducts ? rawProducts.filter((r) => !deletedIds.has(r.id)) : null;
+      const remoteCustomers = rawCustomers ? rawCustomers.filter((r) => !deletedIds.has(r.id)) : null;
+      const remoteSuppliers = rawSuppliers ? rawSuppliers.filter((r) => !deletedIds.has(r.id)) : null;
+      const remoteSales = rawSales ? rawSales.filter((r) => !deletedIds.has(r.id)) : null;
+      const remotePurchases = rawPurchases ? rawPurchases.filter((r) => !deletedIds.has(r.id)) : null;
+      const remoteReceipts = rawReceipts ? rawReceipts.filter((r) => !deletedIds.has(r.id)) : null;
+      const remotePayments = rawPayments ? rawPayments.filter((r) => !deletedIds.has(r.id)) : null;
+      const remoteExpenses = rawExpenses ? rawExpenses.filter((r) => !deletedIds.has(r.id)) : null;
 
       const pulledCounts: Record<string, number> = {};
 

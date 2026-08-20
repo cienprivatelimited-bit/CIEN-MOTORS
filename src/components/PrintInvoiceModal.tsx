@@ -366,7 +366,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
         {/* ========================================================================= */}
         {/* PRINTABLE DOCUMENT AREA (Auto adapts to selected format & printer type) */}
         {/* ========================================================================= */}
-        <div className="overflow-x-auto py-4 max-h-[70vh] flex justify-center bg-slate-100/60 rounded-xl p-2 sm:p-4">
+        <div className="overflow-x-auto py-4 max-h-[70vh] flex justify-center bg-slate-100/60 rounded-xl p-2 sm:p-4 print:max-h-none print:overflow-visible print:bg-transparent print:p-0 print:m-0 print:border-none print:shadow-none">
           {/* 1. DOT MATRIX / CONTINUOUS PAPER VIEW */}
           {printFormat === 'DOT_MATRIX' ? (
             <div
