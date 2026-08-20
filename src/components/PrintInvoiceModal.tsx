@@ -13,14 +13,17 @@ import {
   SaleInvoice,
   PurchaseInvoice,
   AppSettings,
-  InvoicePrintFormat
+  InvoicePrintFormat,
+  Company
 } from '../types';
+import { StorageService } from '../lib/storage';
 import { shareInvoiceViaWhatsApp } from '../lib/whatsapp';
 
 interface PrintInvoiceModalProps {
   invoice: SaleInvoice | PurchaseInvoice | null;
   isPurchase?: boolean;
   settings: AppSettings;
+  company?: Company | null;
   onClose: () => void;
 }
 
@@ -28,6 +31,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   invoice,
   isPurchase = false,
   settings,
+  company: companyProp,
   onClose
 }) => {
   if (!invoice) return null;
@@ -71,6 +75,36 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   const docNumber = sale ? sale.invoiceNumber : purchase?.purchaseNumber;
   const partyName = sale ? sale.customerName : purchase?.supplierName;
   const docTitle = isPurchase ? 'PURCHASE VOUCHER' : 'INVOICE';
+
+  // Resolve active company details for print header
+  const targetCompany: Company | null =
+    companyProp ||
+    (invoice.companyId ? StorageService.getCompanyById(invoice.companyId) : null) ||
+    StorageService.getCompanies().find((c) => c.isActive) ||
+    StorageService.getCompanies()[0] ||
+    null;
+
+  const companyName = targetCompany?.companyName || settings.companyName || 'BUSINESS NAME';
+
+  const addressParts = targetCompany
+    ? [targetCompany.address, targetCompany.city, targetCompany.district, targetCompany.country].filter(Boolean)
+    : [settings.companyAddress].filter(Boolean);
+  const companyAddress = addressParts.length > 0 ? addressParts.join(', ') : 'Address Not Specified';
+
+  const phoneParts = targetCompany
+    ? [targetCompany.telephone, targetCompany.mobile].filter(Boolean)
+    : [settings.companyPhone].filter(Boolean);
+  const companyPhone = phoneParts.length > 0 ? phoneParts.join(' / ') : 'N/A';
+
+  const companyEmail = targetCompany?.companyEmail || settings.companyEmail || '';
+  const taxRegistrationNo = targetCompany?.taxRegistrationNo || targetCompany?.vatNumber || settings.taxRegistrationNo || '';
+
+  // Party Contact Info lookup
+  const customer = sale?.customerId ? StorageService.getCustomers().find((c) => c.id === sale.customerId) : null;
+  const supplier = purchase?.supplierId ? StorageService.getSuppliers().find((s) => s.id === purchase.supplierId) : null;
+
+  const partyPhone = customer?.phone || customer?.mobile || supplier?.phone || supplier?.mobile || '';
+  const partyAddress = customer?.address || customer?.city || supplier?.address || supplier?.city || '';
 
   const hasAnyItemDiscount = invoice.items.some(
     (item) => item.discount && item.discount > 0
@@ -381,16 +415,15 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
               {/* Dot Matrix Header */}
               <div className="text-center pb-2 border-b-2 border-dashed border-black">
                 <p className="text-base sm:text-lg font-black uppercase tracking-wider">
-                  *** {settings.companyName || 'BUSINESS NAME'} ***
+                  *** {companyName} ***
+                </p>
+                <p className="text-[11px] font-semibold">
+                  {companyAddress}
                 </p>
                 <p className="text-[11px]">
-                  {settings.companyAddress}
-                </p>
-                <p className="text-[11px]">
-                  TEL: {settings.companyPhone}
-                  {settings.taxRegistrationNo
-                    ? ` | VAT/TAX: ${settings.taxRegistrationNo}`
-                    : ''}
+                  TEL: {companyPhone}
+                  {companyEmail ? ` | EMAIL: ${companyEmail}` : ''}
+                  {taxRegistrationNo ? ` | VAT/TAX: ${taxRegistrationNo}` : ''}
                 </p>
                 <p className="text-xs font-bold mt-1 uppercase">
                   ================ {docTitle} ================
@@ -404,6 +437,8 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     {isPurchase ? 'SUPPLIER: ' : 'CUSTOMER: '}
                   </span>
                   <span className="font-black">{partyName}</span>
+                  {partyAddress && <div className="text-[10px]">{partyAddress}</div>}
+                  {partyPhone && <div className="text-[10px]">TEL: {partyPhone}</div>}
                 </div>
                 <div className="text-right">
                   <span>DOC NO: </span>
@@ -531,15 +566,16 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                   "'Courier New', Courier, Consolas, Monaco, monospace"
               }}
             >
-              {/* Thermal Header with Prominent Company Name */}
+              {/* Thermal Header with Prominent Company Name & Details */}
               <div className="text-center pb-2 border-b border-dashed border-black">
                 <h1 className="text-sm sm:text-base font-black uppercase tracking-tight">
-                  {settings.companyName || 'BUSINESS NAME'}
+                  {companyName}
                 </h1>
-                <p className="text-[10px]">{settings.companyAddress}</p>
-                <p className="text-[10px]">Tel: {settings.companyPhone}</p>
-                {settings.taxRegistrationNo && (
-                  <p className="text-[10px]">VAT: {settings.taxRegistrationNo}</p>
+                <p className="text-[10px] font-medium">{companyAddress}</p>
+                <p className="text-[10px] font-mono">Tel: {companyPhone}</p>
+                {companyEmail && <p className="text-[10px] font-mono">Email: {companyEmail}</p>}
+                {taxRegistrationNo && (
+                  <p className="text-[10px] font-mono">VAT/Tax: {taxRegistrationNo}</p>
                 )}
                 <div className="text-[11px] font-bold mt-1 uppercase border-t border-b border-black py-0.5">
                   {docTitle}
@@ -562,6 +598,18 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     {partyName}
                   </span>
                 </div>
+                {partyPhone && (
+                  <div className="flex justify-between text-[9px] text-slate-700 font-mono">
+                    <span>Contact:</span>
+                    <span>{partyPhone}</span>
+                  </div>
+                )}
+                {partyAddress && (
+                  <div className="flex justify-between text-[9px] text-slate-700">
+                    <span>Address:</span>
+                    <span className="truncate max-w-[130px] text-right">{partyAddress}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Mode:</span>
                   <span>{invoice.type}</span>
@@ -657,7 +705,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
               id="printable-invoice"
               className={`bg-white text-slate-800 p-6 sm:p-8 shadow-md border border-slate-200 ${containerMaxWidth} w-full ${fontScaleClass}`}
             >
-              {/* Header with Prominent Company Name & Brand */}
+              {/* Header with Prominent Company Details */}
               <div className="pb-5 border-b-2 border-slate-900 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div>
                   <div className="inline-flex items-center gap-1.5 mb-1.5">
@@ -669,18 +717,18 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     </span>
                   </div>
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 uppercase tracking-wide">
-                    {settings.companyName || 'Lanka Commerce & Wholesale'}
+                    {companyName}
                   </h1>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    {settings.companyAddress}
+                  <p className="text-xs text-slate-700 font-semibold mt-0.5">
+                    {companyAddress}
                   </p>
                   <p className="text-xs text-slate-600 font-mono mt-0.5">
-                    Tel: {settings.companyPhone}
-                    {settings.companyEmail ? ` | Email: ${settings.companyEmail}` : ''}
+                    Tel: <strong className="text-slate-800">{companyPhone}</strong>
+                    {companyEmail ? ` | Email: ${companyEmail}` : ''}
                   </p>
-                  {settings.taxRegistrationNo && (
+                  {taxRegistrationNo && (
                     <p className="text-xs text-slate-600 font-mono mt-0.5">
-                      Tax/VAT Reg No: <strong>{settings.taxRegistrationNo}</strong>
+                      Tax / VAT Reg No: <strong>{taxRegistrationNo}</strong>
                     </p>
                   )}
                 </div>
@@ -715,6 +763,12 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     {isPurchase ? 'SUPPLIER / VENDOR:' : 'BILL TO CUSTOMER:'}
                   </span>
                   <p className="font-bold text-sm text-slate-900">{partyName}</p>
+                  {partyAddress && (
+                    <p className="text-xs text-slate-600 font-medium mt-0.5">{partyAddress}</p>
+                  )}
+                  {partyPhone && (
+                    <p className="text-xs text-slate-600 font-mono mt-0.5">Tel: {partyPhone}</p>
+                  )}
                 </div>
 
                 <div className="text-right">

@@ -9,7 +9,8 @@ import {
   SupplierPayment,
   Expense,
   Company,
-  AppSettings
+  AppSettings,
+  AppUser
 } from '../types';
 
 let cachedClient: SupabaseClient | null = null;
@@ -78,6 +79,7 @@ export interface ConnectionTestResult {
     customers: boolean;
     suppliers: boolean;
     sales: boolean;
+    users?: boolean;
   };
   details?: string;
 }
@@ -189,7 +191,8 @@ export async function testSupabaseConnection(url?: string, key?: string): Promis
         products: true,
         customers: true,
         suppliers: true,
-        sales: true
+        sales: true,
+        users: true
       }
     };
   } catch (err: any) {
@@ -232,6 +235,98 @@ async function ensureCompanyExists(client: SupabaseClient, companyId?: string): 
 // ==========================================
 
 export const SupabaseSyncService = {
+  // --- USERS ---
+  async syncUser(user: AppUser): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase not configured' };
+
+    try {
+      const payload = {
+        id: user.id,
+        username: user.username,
+        username_normalized: user.usernameNormalized || user.username.toLowerCase(),
+        full_name: user.fullName,
+        password_hash: user.passwordHash,
+        salt: user.salt,
+        role_id: user.roleId,
+        role_name: user.roleName,
+        is_active: user.isActive !== undefined ? user.isActive : true,
+        assigned_company_ids: user.assignedCompanyIds || [],
+        permission_overrides: user.permissionOverrides || {},
+        last_login: user.lastLogin || null,
+        created_at: user.createdAt || new Date().toISOString(),
+        updated_at: user.updatedAt || new Date().toISOString()
+      };
+
+      const { error } = await client
+        .from('app_users')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) {
+        console.warn('Supabase user sync error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
+      console.warn('Supabase user sync exception:', e);
+      return { success: false, error: e?.message };
+    }
+  },
+
+  async deleteUser(userId: string): Promise<void> {
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    try {
+      await client.from('app_users').delete().eq('id', userId);
+    } catch (e) {
+      console.error('Error deleting user from Supabase:', e);
+    }
+  },
+
+  async fetchAllRemoteUsers(): Promise<AppUser[] | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+
+    try {
+      const { data, error } = await client
+        .from('app_users')
+        .select('*')
+        .order('username');
+
+      if (error) {
+        console.warn('Fetch remote users error:', error);
+        return null;
+      }
+
+      if (!data) return [];
+
+      return data.map((row: any) => ({
+        id: String(row.id),
+        username: row.username,
+        usernameNormalized: row.username_normalized || (row.username ? row.username.toLowerCase() : ''),
+        fullName: row.full_name || row.fullName || row.username,
+        passwordHash: row.password_hash || row.passwordHash || '',
+        salt: row.salt || '',
+        roleId: row.role_id || row.roleId || 'role-sales',
+        roleName: row.role_name || row.roleName || 'Sales User',
+        isActive: row.is_active !== undefined ? row.is_active : (row.isActive !== undefined ? row.isActive : true),
+        assignedCompanyIds: Array.isArray(row.assigned_company_ids)
+          ? row.assigned_company_ids
+          : (typeof row.assigned_company_ids === 'string' && row.assigned_company_ids ? JSON.parse(row.assigned_company_ids) : []),
+        permissionOverrides: typeof row.permission_overrides === 'object' && row.permission_overrides !== null
+          ? row.permission_overrides
+          : (typeof row.permission_overrides === 'string' && row.permission_overrides ? JSON.parse(row.permission_overrides) : {}),
+        lastLogin: row.last_login || row.lastLogin,
+        createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+        updatedAt: row.updated_at || row.updatedAt || new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Error fetching users from Supabase:', e);
+      return null;
+    }
+  },
+
   // --- COMPANIES ---
   async syncCompany(company: Company): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();

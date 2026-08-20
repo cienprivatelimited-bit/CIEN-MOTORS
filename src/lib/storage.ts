@@ -14,7 +14,8 @@ import {
   LedgerAccount,
   OpeningJournalVoucher,
   Warehouse,
-  ImportHistoryRecord
+  ImportHistoryRecord,
+  AppUser
 } from '../types';
 import {
   INITIAL_SETTINGS,
@@ -45,6 +46,7 @@ const STORAGE_KEYS = {
   OPENING_JOURNALS: 'busy_ufo_opening_journals',
   WAREHOUSES: 'busy_ufo_warehouses',
   IMPORT_HISTORY: 'busy_ufo_import_history',
+  USERS: 'busy_ufo_users',
   DELETED_IDS: 'busy_ufo_deleted_ids'
 };
 
@@ -207,6 +209,7 @@ export const StorageService = {
       companies[idx].isActive = !disable;
       companies[idx].updatedAt = new Date().toISOString();
       setItem(STORAGE_KEYS.COMPANIES, companies);
+      SupabaseSyncService.syncCompany(companies[idx]).catch(() => {});
     }
   },
   // --- SETTINGS ---
@@ -1239,7 +1242,7 @@ export const StorageService = {
   // --- MULTI-DEVICE CLOUD PULL ---
   async pullFromSupabase(companyId?: string): Promise<{ success: boolean; pulledCounts?: Record<string, number>; error?: string }> {
     try {
-      const [rawCompanies, rawProducts, rawCustomers, rawSuppliers, rawSales, rawPurchases, rawReceipts, rawPayments, rawExpenses] = await Promise.all([
+      const [rawCompanies, rawProducts, rawCustomers, rawSuppliers, rawSales, rawPurchases, rawReceipts, rawPayments, rawExpenses, rawUsers] = await Promise.all([
         SupabaseSyncService.fetchAllRemoteCompanies(),
         SupabaseSyncService.fetchAllRemoteProducts(companyId),
         SupabaseSyncService.fetchAllRemoteCustomers(companyId),
@@ -1248,7 +1251,8 @@ export const StorageService = {
         SupabaseSyncService.fetchAllRemotePurchases(companyId),
         SupabaseSyncService.fetchAllRemoteReceipts(companyId),
         SupabaseSyncService.fetchAllRemotePayments(companyId),
-        SupabaseSyncService.fetchAllRemoteExpenses(companyId)
+        SupabaseSyncService.fetchAllRemoteExpenses(companyId),
+        SupabaseSyncService.fetchAllRemoteUsers()
       ]);
 
       const deletedIds = getDeletedIds();
@@ -1261,20 +1265,31 @@ export const StorageService = {
       const remoteReceipts = rawReceipts ? rawReceipts.filter((r) => !deletedIds.has(r.id)) : null;
       const remotePayments = rawPayments ? rawPayments.filter((r) => !deletedIds.has(r.id)) : null;
       const remoteExpenses = rawExpenses ? rawExpenses.filter((r) => !deletedIds.has(r.id)) : null;
+      const remoteUsers = rawUsers ? rawUsers.filter((r) => !deletedIds.has(r.id)) : null;
 
       const pulledCounts: Record<string, number> = {};
 
       if (remoteCompanies !== null) {
         const localComp = getItem<Company[]>(STORAGE_KEYS.COMPANIES, INITIAL_COMPANIES);
-        const remoteMap = new Map<string, Company>();
-        remoteCompanies.forEach((r) => remoteMap.set(r.id, r));
-        const mergedComp: Company[] = [...remoteCompanies];
+        const mergedCompMap = new Map<string, Company>();
+        remoteCompanies.forEach((r) => mergedCompMap.set(r.id, r));
+
         localComp.forEach((loc) => {
-          if (!remoteMap.has(loc.id)) {
-            mergedComp.push(loc);
+          const rem = mergedCompMap.get(loc.id);
+          if (!rem) {
+            mergedCompMap.set(loc.id, loc);
             SupabaseSyncService.syncCompany(loc).catch(() => {});
+          } else {
+            const locTime = new Date(loc.updatedAt || 0).getTime();
+            const remTime = new Date(rem.updatedAt || 0).getTime();
+            if (locTime > remTime) {
+              mergedCompMap.set(loc.id, loc);
+              SupabaseSyncService.syncCompany(loc).catch(() => {});
+            }
           }
         });
+
+        const mergedComp = Array.from(mergedCompMap.values());
         setItem(STORAGE_KEYS.COMPANIES, mergedComp);
         pulledCounts.companies = mergedComp.length;
       }
@@ -1442,6 +1457,31 @@ export const StorageService = {
 
         setItem(STORAGE_KEYS.EXPENSES, [...mergedCompExpenses, ...otherComp]);
         pulledCounts.expenses = mergedCompExpenses.length;
+      }
+
+      if (remoteUsers !== null) {
+        const localUsers = getItem<AppUser[]>(STORAGE_KEYS.USERS, []);
+        const mergedUserMap = new Map<string, AppUser>();
+        remoteUsers.forEach((r) => mergedUserMap.set(r.id, r));
+
+        localUsers.forEach((loc) => {
+          const rem = mergedUserMap.get(loc.id);
+          if (!rem) {
+            mergedUserMap.set(loc.id, loc);
+            SupabaseSyncService.syncUser(loc).catch(() => {});
+          } else {
+            const locTime = new Date(loc.updatedAt || 0).getTime();
+            const remTime = new Date(rem.updatedAt || 0).getTime();
+            if (locTime > remTime) {
+              mergedUserMap.set(loc.id, loc);
+              SupabaseSyncService.syncUser(loc).catch(() => {});
+            }
+          }
+        });
+
+        const mergedUsers = Array.from(mergedUserMap.values());
+        setItem(STORAGE_KEYS.USERS, mergedUsers);
+        pulledCounts.users = mergedUsers.length;
       }
 
       return { success: true, pulledCounts };

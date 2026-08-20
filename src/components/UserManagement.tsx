@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AppUser, Role, PermissionKey, PermissionModule, AuditLog } from '../types';
 import { AuthService } from '../lib/auth';
+import { SupabaseSyncService } from '../lib/supabase';
 import { MODULE_PERMISSIONS, ALL_PERMISSION_KEYS } from '../lib/permissions';
 
 interface UserManagementProps {
@@ -124,7 +125,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         isActive: newIsActive
       });
 
-      showToast('success', `User account "${created.username}" created successfully.`);
+      const syncResult = await SupabaseSyncService.syncUser(created);
+      if (syncResult.error) {
+        showToast('warning', `User "${created.username}" created locally, but Supabase sync returned: ${syncResult.error}`);
+      } else {
+        showToast('success', `User account "${created.username}" created and saved to Supabase!`);
+      }
+
       setIsNewUserModalOpen(false);
       reloadData();
     } catch (err: unknown) {

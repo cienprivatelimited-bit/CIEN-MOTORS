@@ -285,6 +285,7 @@ export default function App() {
     StorageService.disableCompany(companyId, disable);
     setCompanies(StorageService.getCompanies());
     refreshSession();
+    addToast('info', disable ? 'Company has been disabled.' : 'Company has been enabled.');
   };
 
   // Derived Dashboard Stats (Company Isolated)
@@ -794,6 +795,7 @@ export default function App() {
           invoice={printingDoc.doc}
           isPurchase={printingDoc.isPurchase}
           settings={settings}
+          company={session?.company}
           onClose={() => setPrintingDoc(null)}
         />
       )}

@@ -24,6 +24,7 @@ import { AppSettings, InvoicePrintFormat, AuthSession } from '../types';
 import { SUPABASE_SQL_SCHEMA } from '../lib/sqlExport';
 import { testSupabaseConnection, ConnectionTestResult, SupabaseSyncService } from '../lib/supabase';
 import { StorageService } from '../lib/storage';
+import { AuthService } from '../lib/auth';
 import { AccountGroupsModal } from './AccountGroupsModal';
 
 interface SettingsProps {
@@ -101,11 +102,17 @@ export const Settings: React.FC<SettingsProps> = ({
       const receipts = StorageService.getReceipts();
       const payments = StorageService.getPayments();
       const expenses = StorageService.getExpenses();
+      const users = AuthService.getUsers();
 
       let syncedCount = 0;
       let errorCount = 0;
       let lastErrorMessage = '';
 
+      for (const u of users) {
+        const res = await SupabaseSyncService.syncUser(u);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'User sync failed'; }
+      }
       for (const p of prods) {
         const res = await SupabaseSyncService.syncProduct(p);
         if (res.success) syncedCount++;

@@ -11,6 +11,7 @@ import {
 import { SYSTEM_ROLES, calculateEffectivePermissions, checkPermission } from './permissions';
 import { generateSalt, hashPassword, verifyPassword } from './crypto';
 import { StorageService } from './storage';
+import { SupabaseSyncService } from './supabase';
 
 const AUTH_STORAGE_KEYS = {
   USERS: 'busy_ufo_users',
@@ -272,6 +273,7 @@ export const AuthService = {
     const users = this.getUsers();
     users.push(newUser);
     setStored(AUTH_STORAGE_KEYS.USERS, users);
+    SupabaseSyncService.syncUser(newUser).catch(() => {});
 
     this.recordAuditLog(
       'USER_CREATED',
@@ -345,6 +347,7 @@ export const AuthService = {
 
     users[idx] = updatedUser;
     setStored(AUTH_STORAGE_KEYS.USERS, users);
+    SupabaseSyncService.syncUser(updatedUser).catch(() => {});
 
     if (wasActive !== updatedUser.isActive) {
       this.recordAuditLog(
@@ -391,6 +394,7 @@ export const AuthService = {
     };
 
     setStored(AUTH_STORAGE_KEYS.USERS, users);
+    SupabaseSyncService.syncUser(users[idx]).catch(() => {});
 
     this.recordAuditLog(
       'PASSWORD_RESET',
@@ -432,6 +436,7 @@ export const AuthService = {
     };
 
     setStored(AUTH_STORAGE_KEYS.USERS, users);
+    SupabaseSyncService.syncUser(users[idx]).catch(() => {});
 
     this.recordAuditLog(
       'PASSWORD_CHANGED',
@@ -460,6 +465,7 @@ export const AuthService = {
 
     users[idx] = updatedUser;
     setStored(AUTH_STORAGE_KEYS.USERS, users);
+    SupabaseSyncService.syncUser(updatedUser).catch(() => {});
 
     this.recordAuditLog(
       'RIGHTS_CHANGED',
@@ -500,6 +506,7 @@ export const AuthService = {
 
     const filtered = users.filter((u) => u.id !== userId);
     setStored(AUTH_STORAGE_KEYS.USERS, filtered);
+    SupabaseSyncService.deleteUser(userId).catch(() => {});
 
     this.recordAuditLog(
       'USER_DISABLED',
@@ -617,7 +624,9 @@ export const AuthService = {
     const idx = users.findIndex((u) => u.id === user.id);
     if (idx !== -1) {
       users[idx].lastLogin = now;
+      users[idx].updatedAt = now;
       setStored(AUTH_STORAGE_KEYS.USERS, users);
+      SupabaseSyncService.syncUser(users[idx]).catch(() => {});
     }
 
     const assignedCompanies = this.getUserAssignedCompanies(user);
