@@ -88,9 +88,21 @@ function getItem<T>(key: string, defaultValue: T): T {
   }
 }
 
+const syncBroadcastChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ufo_cross_tab_sync') : null;
+
 function setItem<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    if (syncBroadcastChannel) {
+      try {
+        syncBroadcastChannel.postMessage({ key, timestamp: Date.now() });
+      } catch {
+        // Ignore BroadcastChannel errors in restricted contexts
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ufo_local_storage_change', { detail: { key } }));
+    }
   } catch (e) {
     console.error(`Error saving key ${key}:`, e);
   }

@@ -207,15 +207,32 @@ export default function App() {
     }
   }, [session?.company?.id]);
 
-  // Real-time multi-device cloud listener
+  // Real-time multi-device cloud listener & cross-tab local live sync
   useEffect(() => {
-    const unsubscribe = SupabaseSyncService.subscribeToRemoteChanges((table, eventType) => {
+    // 1. Supabase Realtime WebSocket Subscription
+    const unsubscribeSupabase = SupabaseSyncService.subscribeToRemoteChanges((table, eventType) => {
       console.log(`[Supabase Realtime] ${eventType} on ${table}`);
       if (session?.company?.id) {
         performCloudPull(session.company.id, false);
       }
     });
 
+    // 2. Cross-Tab & Same-Tab Local Storage Change Listeners
+    const handleLocalRefresh = () => {
+      if (session?.company?.id) {
+        refreshAllStates(session.company.id);
+      }
+    };
+
+    const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ufo_cross_tab_sync') : null;
+    if (bc) {
+      bc.onmessage = () => handleLocalRefresh();
+    }
+
+    window.addEventListener('storage', handleLocalRefresh);
+    window.addEventListener('ufo_local_storage_change', handleLocalRefresh);
+
+    // 3. Tab Visibility & Focus Pull
     const handleFocusOrVisible = () => {
       if (document.visibilityState === 'visible' && session?.company?.id) {
         performCloudPull(session.company.id, false);
@@ -225,10 +242,24 @@ export default function App() {
     window.addEventListener('visibilitychange', handleFocusOrVisible);
     window.addEventListener('focus', handleFocusOrVisible);
 
+    // 4. Background High-Frequency Auto-Sync Interval (Every 5 seconds for live multi-device updates)
+    const syncInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && session?.company?.id) {
+        const creds = getActiveSupabaseCredentials();
+        if (creds.url && creds.key) {
+          performCloudPull(session.company.id, false);
+        }
+      }
+    }, 5000);
+
     return () => {
-      unsubscribe();
+      unsubscribeSupabase();
+      if (bc) bc.close();
+      window.removeEventListener('storage', handleLocalRefresh);
+      window.removeEventListener('ufo_local_storage_change', handleLocalRefresh);
       window.removeEventListener('visibilitychange', handleFocusOrVisible);
       window.removeEventListener('focus', handleFocusOrVisible);
+      clearInterval(syncInterval);
     };
   }, [session?.company?.id]);
 
