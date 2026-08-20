@@ -358,10 +358,36 @@ export function calculateEffectivePermissions(
  */
 export function checkPermission(
   effectivePermissions: Record<PermissionKey, boolean> | undefined,
-  module: PermissionModule,
+  module: PermissionModule | string,
   action: PermissionAction
 ): boolean {
   if (!effectivePermissions) return false;
-  const key: PermissionKey = `${module}:${action}`;
+
+  // 1. Handle composite or aliased modules (e.g. 'payments' page in navigation)
+  if (module === 'payments') {
+    return (
+      Boolean(effectivePermissions[`customer_receipts:${action}` as PermissionKey]) ||
+      Boolean(effectivePermissions[`supplier_payments:${action}` as PermissionKey]) ||
+      Boolean(effectivePermissions[`expenses:${action}` as PermissionKey])
+    );
+  }
+
+  if (module === 'companies' || module === 'company') {
+    return Boolean(effectivePermissions[`companies:${action}` as PermissionKey]);
+  }
+
+  if (module === 'data_import' || module === 'import') {
+    return Boolean(effectivePermissions[`data_import:${action}` as PermissionKey]);
+  }
+
+  if (module === 'users') {
+    return (
+      Boolean(effectivePermissions[`users:${action}` as PermissionKey]) ||
+      Boolean(effectivePermissions[`roles:${action}` as PermissionKey]) ||
+      Boolean(effectivePermissions[`audit_logs:${action}` as PermissionKey])
+    );
+  }
+
+  const key: PermissionKey = `${module as PermissionModule}:${action}`;
   return Boolean(effectivePermissions[key]);
 }

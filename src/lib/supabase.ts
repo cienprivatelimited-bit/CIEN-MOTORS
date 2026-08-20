@@ -107,7 +107,7 @@ export async function testSupabaseConnection(url?: string, key?: string): Promis
   try {
     const client = createClient(credentials.url, credentials.key);
     
-    // Test product table query
+    // 1. Test product table READ query
     const { data: prodData, error: prodError } = await client
       .from('busy_ufo_products')
       .select('id')
@@ -138,10 +138,53 @@ export async function testSupabaseConnection(url?: string, key?: string): Promis
       };
     }
 
+    // 2. Ensure company record exists in Supabase so foreign key constraints pass
+    await client.from('companies').upsert({
+      id: 'comp-1',
+      company_name: 'Default Company',
+      short_name: 'DEFAULT',
+      is_active: true
+    }, { onConflict: 'id' });
+
+    // 3. Test product table WRITE (upsert) permission to verify RLS is disabled or allows inserts
+    const testPingId = '__connection_test_ping__';
+    const { error: writeError } = await client
+      .from('busy_ufo_products')
+      .upsert({
+        id: testPingId,
+        code: 'TEST-PING',
+        name: 'Supabase Sync Connection Test',
+        cost_price: 0,
+        selling_price: 0,
+        current_stock: 0,
+        reorder_level: 0,
+        company_id: 'comp-1'
+      }, { onConflict: 'id' });
+
+    if (writeError) {
+      if (writeError.message.includes('row-level security') || writeError.code === '42501') {
+        return {
+          success: false,
+          url: credentials.url,
+          message: 'Read access works, BUT Save/Write access is BLOCKED by Supabase Row Level Security (RLS). Please run "ALTER TABLE busy_ufo_products DISABLE ROW LEVEL SECURITY;" in your Supabase SQL Editor.',
+          details: writeError.message
+        };
+      }
+      return {
+        success: false,
+        url: credentials.url,
+        message: `Read access works, but Write access failed: ${writeError.message}`,
+        details: writeError.message
+      };
+    }
+
+    // Clean up test ping record
+    await client.from('busy_ufo_products').delete().eq('id', testPingId);
+
     return {
       success: true,
       url: credentials.url,
-      message: 'Supabase connection verified successfully! Database tables are accessible.',
+      message: 'Supabase connection verified! BOTH Read and Write (Save) access are fully active.',
       tableStatus: {
         products: true,
         customers: true,
@@ -159,6 +202,31 @@ export async function testSupabaseConnection(url?: string, key?: string): Promis
   }
 }
 
+async function ensureCompanyExists(client: SupabaseClient, companyId?: string): Promise<void> {
+  const compId = companyId || 'comp-1';
+  try {
+    const rawCompanies = localStorage.getItem('busy_ufo_companies');
+    let compName = 'Default Company';
+    let shortName = 'DEFAULT';
+    if (rawCompanies) {
+      const companies = JSON.parse(rawCompanies);
+      const matched = companies.find((c: any) => c.id === compId);
+      if (matched) {
+        compName = matched.companyName || matched.company_name || compName;
+        shortName = matched.shortName || matched.short_name || shortName;
+      }
+    }
+    await client.from('companies').upsert({
+      id: compId,
+      company_name: compName,
+      short_name: shortName,
+      is_active: true
+    }, { onConflict: 'id' });
+  } catch (e) {
+    console.warn('Failed to ensure company row in Supabase:', e);
+  }
+}
+
 // ==========================================
 // SUPABASE REAL-TIME CLOUD SYNC ENGINE
 // ==========================================
@@ -170,6 +238,8 @@ export const SupabaseSyncService = {
     if (!client) return { success: false, error: 'Supabase not configured' };
 
     try {
+      await ensureCompanyExists(client, product.companyId || 'comp-1');
+
       const payload = {
         id: product.id,
         code: product.code,
@@ -223,6 +293,8 @@ export const SupabaseSyncService = {
     if (!client) return { success: false, error: 'Supabase not configured' };
 
     try {
+      await ensureCompanyExists(client, customer.companyId || 'comp-1');
+
       const payload = {
         id: customer.id,
         code: customer.code,
@@ -268,6 +340,8 @@ export const SupabaseSyncService = {
     if (!client) return { success: false, error: 'Supabase not configured' };
 
     try {
+      await ensureCompanyExists(client, supplier.companyId || 'comp-1');
+
       const payload = {
         id: supplier.id,
         code: supplier.code,
@@ -313,6 +387,8 @@ export const SupabaseSyncService = {
     if (!client) return { success: false, error: 'Supabase not configured' };
 
     try {
+      await ensureCompanyExists(client, sale.companyId || 'comp-1');
+
       const salePayload = {
         id: sale.id,
         invoice_number: sale.invoiceNumber,
@@ -381,6 +457,8 @@ export const SupabaseSyncService = {
     if (!client) return { success: false, error: 'Supabase not configured' };
 
     try {
+      await ensureCompanyExists(client, purchase.companyId || 'comp-1');
+
       const purchasePayload = {
         id: purchase.id,
         purchase_number: purchase.purchaseNumber,
@@ -447,6 +525,7 @@ export const SupabaseSyncService = {
     const client = getSupabaseClient();
     if (!client) return { success: false, error: 'Supabase not configured' };
     try {
+      await ensureCompanyExists(client, receipt.companyId || 'comp-1');
       const payload = {
         id: receipt.id,
         receipt_number: receipt.receiptNumber,
@@ -481,6 +560,7 @@ export const SupabaseSyncService = {
     const client = getSupabaseClient();
     if (!client) return { success: false, error: 'Supabase not configured' };
     try {
+      await ensureCompanyExists(client, payment.companyId || 'comp-1');
       const payload = {
         id: payment.id,
         payment_number: payment.paymentNumber,
@@ -515,6 +595,7 @@ export const SupabaseSyncService = {
     const client = getSupabaseClient();
     if (!client) return { success: false, error: 'Supabase not configured' };
     try {
+      await ensureCompanyExists(client, expense.companyId || 'comp-1');
       const payload = {
         id: expense.id,
         expense_number: expense.expenseNumber,

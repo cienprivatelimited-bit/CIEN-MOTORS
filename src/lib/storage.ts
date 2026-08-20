@@ -81,6 +81,29 @@ function setItem<T>(key: string, value: T): void {
   }
 }
 
+function dedupeItems<T extends { id: string }>(items: T[]): T[] {
+  if (!Array.isArray(items)) return items;
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item || !item.id) {
+      result.push(item);
+      continue;
+    }
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      result.push(item);
+    } else {
+      const uniqueId = `${item.id}-${i}-${Math.random().toString(36).substring(2, 6)}`;
+      const fixedItem = { ...item, id: uniqueId };
+      seen.add(uniqueId);
+      result.push(fixedItem);
+    }
+  }
+  return result;
+}
+
 export const StorageService = {
   // --- COMPANIES ---
   getCompanies(): Company[] {
@@ -168,7 +191,8 @@ export const StorageService = {
 
   // --- CUSTOMERS ---
   getCustomers(companyId?: string): Customer[] {
-    const all = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
+    const raw = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -232,7 +256,8 @@ export const StorageService = {
 
   // --- SUPPLIERS ---
   getSuppliers(companyId?: string): Supplier[] {
-    const all = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
+    const raw = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -294,7 +319,8 @@ export const StorageService = {
 
   // --- PRODUCTS ---
   getProducts(companyId?: string): Product[] {
-    const all = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    const raw = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -347,7 +373,7 @@ export const StorageService = {
     const autoCode = `PROD-${String(codeCount).padStart(3, '0')}`;
 
     const newProd: Product = {
-      id: `prod-${Date.now()}`,
+      id: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       companyId: targetCompId,
       code: product.code?.trim() || autoCode,
       name: product.name?.trim() || 'New Product',
@@ -384,7 +410,8 @@ export const StorageService = {
 
   // --- SALES & INVOICES ---
   getSales(companyId?: string): SaleInvoice[] {
-    const all = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);
+    const raw = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -415,7 +442,7 @@ export const StorageService = {
 
     const newInvoice: SaleInvoice = {
       ...invoiceData,
-      id: `sale-${Date.now()}`,
+      id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       invoiceNumber: invNumber,
       createdAt: new Date().toISOString()
     };
@@ -484,7 +511,8 @@ export const StorageService = {
 
   // --- PURCHASES ---
   getPurchases(companyId?: string): PurchaseInvoice[] {
-    const all = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, INITIAL_PURCHASES);
+    const raw = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, INITIAL_PURCHASES);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -502,7 +530,7 @@ export const StorageService = {
 
     const newPurchase: PurchaseInvoice = {
       ...purchaseData,
-      id: `pur-${Date.now()}`,
+      id: `pur-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       purchaseNumber: purNumber,
       createdAt: new Date().toISOString()
     };
@@ -574,7 +602,8 @@ export const StorageService = {
 
   // --- CUSTOMER RECEIPTS ---
   getReceipts(companyId?: string): CustomerReceipt[] {
-    const all = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, INITIAL_RECEIPTS);
+    const raw = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, INITIAL_RECEIPTS);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -589,7 +618,7 @@ export const StorageService = {
 
     const newReceipt: CustomerReceipt = {
       ...receiptData,
-      id: `rec-${Date.now()}`,
+      id: `rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       receiptNumber: recNumber,
       createdAt: new Date().toISOString()
     };
@@ -663,7 +692,8 @@ export const StorageService = {
 
   // --- SUPPLIER PAYMENTS ---
   getPayments(companyId?: string): SupplierPayment[] {
-    const all = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, INITIAL_PAYMENTS);
+    const raw = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, INITIAL_PAYMENTS);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -678,7 +708,7 @@ export const StorageService = {
 
     const newPayment: SupplierPayment = {
       ...paymentData,
-      id: `pay-${Date.now()}`,
+      id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       paymentNumber: payNumber,
       createdAt: new Date().toISOString()
     };
@@ -752,7 +782,8 @@ export const StorageService = {
 
   // --- EXPENSES ---
   getExpenses(companyId?: string): Expense[] {
-    const all = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
+    const raw = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
+    const all = dedupeItems(raw);
     if (!companyId) return all;
     return all.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
@@ -765,7 +796,7 @@ export const StorageService = {
 
     const newExpense: Expense = {
       ...expenseData,
-      id: `exp-${Date.now()}`,
+      id: `exp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       expenseNumber: expNumber,
       createdAt: new Date().toISOString()
     };
@@ -1121,58 +1152,167 @@ export const StorageService = {
 
       if (remoteProducts !== null) {
         const local = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+        const targetComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.PRODUCTS, [...remoteProducts, ...otherComp]);
-        pulledCounts.products = remoteProducts.length;
+
+        // Map remote products by ID and Code
+        const remoteMap = new Map<string, Product>();
+        remoteProducts.forEach((r) => {
+          remoteMap.set(r.id, r);
+          if (r.code) remoteMap.set(`code:${r.code.toLowerCase().trim()}`, r);
+        });
+
+        // Merge: keep remote products, plus any local products created/imported locally that aren't in remote yet
+        const mergedCompProducts: Product[] = [...remoteProducts];
+        targetComp.forEach((loc) => {
+          const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
+          if (!isRemotePresent) {
+            mergedCompProducts.push(loc);
+            // Background sync unsynced local product to Supabase
+            SupabaseSyncService.syncProduct(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.PRODUCTS, [...mergedCompProducts, ...otherComp]);
+        pulledCounts.products = mergedCompProducts.length;
       }
 
       if (remoteCustomers !== null) {
         const local = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+        const targetComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.CUSTOMERS, [...remoteCustomers, ...otherComp]);
-        pulledCounts.customers = remoteCustomers.length;
+
+        const remoteMap = new Map<string, Customer>();
+        remoteCustomers.forEach((r) => {
+          remoteMap.set(r.id, r);
+          if (r.code) remoteMap.set(`code:${r.code.toLowerCase().trim()}`, r);
+        });
+
+        const mergedCompCustomers: Customer[] = [...remoteCustomers];
+        targetComp.forEach((loc) => {
+          const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
+          if (!isRemotePresent) {
+            mergedCompCustomers.push(loc);
+            SupabaseSyncService.syncCustomer(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.CUSTOMERS, [...mergedCompCustomers, ...otherComp]);
+        pulledCounts.customers = mergedCompCustomers.length;
       }
 
       if (remoteSuppliers !== null) {
         const local = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+        const targetComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.SUPPLIERS, [...remoteSuppliers, ...otherComp]);
-        pulledCounts.suppliers = remoteSuppliers.length;
+
+        const remoteMap = new Map<string, Supplier>();
+        remoteSuppliers.forEach((r) => {
+          remoteMap.set(r.id, r);
+          if (r.code) remoteMap.set(`code:${r.code.toLowerCase().trim()}`, r);
+        });
+
+        const mergedCompSuppliers: Supplier[] = [...remoteSuppliers];
+        targetComp.forEach((loc) => {
+          const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
+          if (!isRemotePresent) {
+            mergedCompSuppliers.push(loc);
+            SupabaseSyncService.syncSupplier(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.SUPPLIERS, [...mergedCompSuppliers, ...otherComp]);
+        pulledCounts.suppliers = mergedCompSuppliers.length;
       }
 
       if (remoteSales !== null) {
         const local = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, []);
+        const targetComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.SALES, [...remoteSales, ...otherComp]);
-        pulledCounts.sales = remoteSales.length;
+
+        const remoteIds = new Set(remoteSales.map((r) => r.id));
+        const mergedCompSales: SaleInvoice[] = [...remoteSales];
+        targetComp.forEach((loc) => {
+          if (!remoteIds.has(loc.id)) {
+            mergedCompSales.push(loc);
+            SupabaseSyncService.syncSaleInvoice(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.SALES, [...mergedCompSales, ...otherComp]);
+        pulledCounts.sales = mergedCompSales.length;
       }
 
       if (remotePurchases !== null) {
         const local = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, []);
+        const targetComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.PURCHASES, [...remotePurchases, ...otherComp]);
-        pulledCounts.purchases = remotePurchases.length;
+
+        const remoteIds = new Set(remotePurchases.map((r) => r.id));
+        const mergedCompPurchases: PurchaseInvoice[] = [...remotePurchases];
+        targetComp.forEach((loc) => {
+          if (!remoteIds.has(loc.id)) {
+            mergedCompPurchases.push(loc);
+            SupabaseSyncService.syncPurchaseInvoice(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.PURCHASES, [...mergedCompPurchases, ...otherComp]);
+        pulledCounts.purchases = mergedCompPurchases.length;
       }
 
       if (remoteReceipts !== null) {
         const local = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, []);
+        const targetComp = companyId ? local.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.RECEIPTS, [...remoteReceipts, ...otherComp]);
-        pulledCounts.receipts = remoteReceipts.length;
+
+        const remoteIds = new Set(remoteReceipts.map((r) => r.id));
+        const mergedCompReceipts: CustomerReceipt[] = [...remoteReceipts];
+        targetComp.forEach((loc) => {
+          if (!remoteIds.has(loc.id)) {
+            mergedCompReceipts.push(loc);
+            SupabaseSyncService.syncReceipt(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.RECEIPTS, [...mergedCompReceipts, ...otherComp]);
+        pulledCounts.receipts = mergedCompReceipts.length;
       }
 
       if (remotePayments !== null) {
         const local = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, []);
+        const targetComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.PAYMENTS, [...remotePayments, ...otherComp]);
-        pulledCounts.payments = remotePayments.length;
+
+        const remoteIds = new Set(remotePayments.map((r) => r.id));
+        const mergedCompPayments: SupplierPayment[] = [...remotePayments];
+        targetComp.forEach((loc) => {
+          if (!remoteIds.has(loc.id)) {
+            mergedCompPayments.push(loc);
+            SupabaseSyncService.syncPayment(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.PAYMENTS, [...mergedCompPayments, ...otherComp]);
+        pulledCounts.payments = mergedCompPayments.length;
       }
 
       if (remoteExpenses !== null) {
         const local = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, []);
+        const targetComp = companyId ? local.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
-        setItem(STORAGE_KEYS.EXPENSES, [...remoteExpenses, ...otherComp]);
-        pulledCounts.expenses = remoteExpenses.length;
+
+        const remoteIds = new Set(remoteExpenses.map((r) => r.id));
+        const mergedCompExpenses: Expense[] = [...remoteExpenses];
+        targetComp.forEach((loc) => {
+          if (!remoteIds.has(loc.id)) {
+            mergedCompExpenses.push(loc);
+            SupabaseSyncService.syncExpense(loc).catch(() => {});
+          }
+        });
+
+        setItem(STORAGE_KEYS.EXPENSES, [...mergedCompExpenses, ...otherComp]);
+        pulledCounts.expenses = mergedCompExpenses.length;
       }
 
       return { success: true, pulledCounts };

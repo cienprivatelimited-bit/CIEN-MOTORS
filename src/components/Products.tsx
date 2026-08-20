@@ -299,7 +299,7 @@ export const Products: React.FC<ProductsProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredProducts.map((prod) => {
+                {filteredProducts.map((prod, idx) => {
                   const isLow = prod.currentStock <= prod.reorderLevel && prod.currentStock > 0;
                   const isOut = prod.currentStock <= 0;
                   const unitLabel = prod.unit || prod.primaryUnit || 'Nos';
@@ -312,7 +312,7 @@ export const Products: React.FC<ProductsProps> = ({
                   }
 
                   return (
-                    <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={`${prod.id}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-4 font-mono font-bold text-slate-900">{prod.code}</td>
                       <td className="p-4">
                         <div className="font-bold text-slate-900">{prod.name}</div>

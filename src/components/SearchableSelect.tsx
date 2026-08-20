@@ -246,6 +246,7 @@ export const SearchableCustomerSelect: React.FC<SearchableCustomerSelectProps> =
           {(query || selectedCustomerId) && (
             <button
               type="button"
+              tabIndex={-1}
               onClick={handleClear}
               className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 cursor-pointer"
               title="Clear selection"
@@ -255,6 +256,7 @@ export const SearchableCustomerSelect: React.FC<SearchableCustomerSelectProps> =
           )}
           <button
             type="button"
+            tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
               setIsOpen(!isOpen);
@@ -578,6 +580,7 @@ export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> =
           {(query || selectedSupplierId) && (
             <button
               type="button"
+              tabIndex={-1}
               onClick={handleClear}
               className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 cursor-pointer"
               title="Clear selection"
@@ -587,6 +590,7 @@ export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> =
           )}
           <button
             type="button"
+            tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
               setIsOpen(!isOpen);
@@ -844,6 +848,7 @@ export const SearchableProductSelect: React.FC<SearchableProductSelectProps> = (
           {(query || selectedProductId) && (
             <button
               type="button"
+              tabIndex={-1}
               onClick={handleClear}
               className="p-0.5 text-slate-400 hover:text-rose-600 rounded-md hover:bg-slate-100 cursor-pointer"
               title="Clear selection"
@@ -853,6 +858,7 @@ export const SearchableProductSelect: React.FC<SearchableProductSelectProps> = (
           )}
           <button
             type="button"
+            tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
               setIsOpen(!isOpen);

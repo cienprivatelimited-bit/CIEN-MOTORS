@@ -103,40 +103,55 @@ export const Settings: React.FC<SettingsProps> = ({
       const expenses = StorageService.getExpenses();
 
       let syncedCount = 0;
+      let errorCount = 0;
+      let lastErrorMessage = '';
+
       for (const p of prods) {
-        await SupabaseSyncService.syncProduct(p);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncProduct(p);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Product sync failed'; }
       }
       for (const c of custs) {
-        await SupabaseSyncService.syncCustomer(c);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncCustomer(c);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Customer sync failed'; }
       }
       for (const s of supps) {
-        await SupabaseSyncService.syncSupplier(s);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncSupplier(s);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Supplier sync failed'; }
       }
       for (const sale of sales) {
-        await SupabaseSyncService.syncSaleInvoice(sale);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncSaleInvoice(sale);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Sale sync failed'; }
       }
       for (const pur of purchases) {
-        await SupabaseSyncService.syncPurchaseInvoice(pur);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncPurchaseInvoice(pur);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Purchase sync failed'; }
       }
       for (const rec of receipts) {
-        await SupabaseSyncService.syncReceipt(rec);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncReceipt(rec);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Receipt sync failed'; }
       }
       for (const pay of payments) {
-        await SupabaseSyncService.syncPayment(pay);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncPayment(pay);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Payment sync failed'; }
       }
       for (const exp of expenses) {
-        await SupabaseSyncService.syncExpense(exp);
-        syncedCount++;
+        const res = await SupabaseSyncService.syncExpense(exp);
+        if (res.success) syncedCount++;
+        else { errorCount++; lastErrorMessage = res.error || 'Expense sync failed'; }
       }
 
-      showToast('success', `Synced ${syncedCount} total records to Supabase Cloud!`);
+      if (errorCount > 0) {
+        showToast('error', `Synced ${syncedCount} items, but ${errorCount} items failed to save in Supabase: ${lastErrorMessage}`);
+      } else {
+        showToast('success', `Successfully pushed ${syncedCount} records to Supabase Cloud!`);
+      }
     } catch (err: any) {
       showToast('error', `Sync failed: ${err?.message || 'Check database connection'}`);
     } finally {

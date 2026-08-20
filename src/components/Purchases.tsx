@@ -683,6 +683,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
                           </div>
                           <button
                             type="button"
+                            tabIndex={-1}
                             onClick={() => handleRemoveLine(idx)}
                             disabled={lineItems.length === 1}
                             className="lg:hidden text-rose-500 p-2 hover:bg-rose-50 rounded-lg shrink-0 disabled:opacity-30"
@@ -717,7 +718,21 @@ export const Purchases: React.FC<PurchasesProps> = ({
                             placeholder="0.00"
                             value={item.unitCost}
                             onChange={(e) => handleItemChange(idx, 'unitCost', e.target.value)}
-                            onKeyDown={(e) => handleEnterKeyNavigation(e)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                if (!isItemDiscountEnabled) {
+                                  e.preventDefault();
+                                  if (idx < lineItems.length - 1) {
+                                    const nextInput = document.getElementById(`purchase-product-search-${idx + 1}`) as HTMLInputElement | null;
+                                    if (nextInput) nextInput.focus();
+                                  } else {
+                                    handleAddLine();
+                                  }
+                                } else {
+                                  handleEnterKeyNavigation(e);
+                                }
+                              }
+                            }}
                             className="w-full min-h-[38px] p-2 rounded-xl border border-slate-200 bg-white font-mono text-right text-sm font-semibold focus:ring-2 focus:ring-purple-500 outline-hidden"
                           />
                         </div>
@@ -736,16 +751,23 @@ export const Purchases: React.FC<PurchasesProps> = ({
                               disabled={!isItemDiscountEnabled}
                               value={isItemDiscountEnabled ? item.discount : '0'}
                               onChange={(e) => handleItemChange(idx, 'discount', e.target.value)}
-                              onKeyDown={(e) =>
-                                handleEnterKeyNavigation(e, {
-                                  onLastFieldEnter: idx === lineItems.length - 1 ? handleAddLine : undefined
-                                })
-                              }
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (idx < lineItems.length - 1) {
+                                    const nextInput = document.getElementById(`purchase-product-search-${idx + 1}`) as HTMLInputElement | null;
+                                    if (nextInput) nextInput.focus();
+                                  } else {
+                                    handleAddLine();
+                                  }
+                                }
+                              }}
                               className="w-full p-2 text-right font-mono text-xs font-semibold outline-hidden disabled:cursor-not-allowed"
                               title={isItemDiscountEnabled ? "Item discount value" : "Item discount disabled in Company Configuration"}
                             />
                             <button
                               type="button"
+                              tabIndex={-1}
                               onClick={() => handleToggleDiscountType(idx)}
                               disabled={!isItemDiscountEnabled}
                               className="px-2.5 py-1 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border-l border-slate-200 shrink-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -771,6 +793,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
 
                           <button
                             type="button"
+                            tabIndex={-1}
                             onClick={() => handleRemoveLine(idx)}
                             disabled={lineItems.length === 1}
                             className="hidden lg:flex p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
