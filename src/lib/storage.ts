@@ -134,6 +134,7 @@ export const StorageService = {
         } as Company;
         companies[index] = updated;
         setItem(STORAGE_KEYS.COMPANIES, companies);
+        SupabaseSyncService.syncCompany(updated).catch(() => {});
         return updated;
       }
     }
@@ -168,6 +169,7 @@ export const StorageService = {
 
     companies.push(newCompany);
     setItem(STORAGE_KEYS.COMPANIES, companies);
+    SupabaseSyncService.syncCompany(newCompany).catch(() => {});
     return newCompany;
   },
 
@@ -416,8 +418,12 @@ export const StorageService = {
     return all.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
 
-  createSaleInvoice(invoiceData: Omit<SaleInvoice, 'id' | 'invoiceNumber' | 'createdAt'>): SaleInvoice {
+  createSaleInvoice(
+    invoiceData: Omit<SaleInvoice, 'id' | 'invoiceNumber' | 'createdAt'>,
+    companyId?: string
+  ): SaleInvoice {
     const sales = this.getSales();
+    const targetCompId = invoiceData.companyId || companyId || DEFAULT_COMPANY_ID;
     const products = this.getProducts();
     const customers = this.getCustomers();
     const settings = this.getSettings();
@@ -425,7 +431,11 @@ export const StorageService = {
     // 1. Stock Check if negative stock disabled
     if (!settings.allowNegativeStock) {
       for (const item of invoiceData.items) {
-        const prod = products.find((p) => p.id === item.productId || p.code === item.productCode);
+        const prod = products.find(
+          (p) =>
+            (p.id === item.productId || p.code === item.productCode) &&
+            (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
+        );
         if (prod) {
           if (prod.currentStock < item.quantity) {
             throw new Error(
@@ -436,12 +446,14 @@ export const StorageService = {
       }
     }
 
-    // 2. Generate Invoice Number
-    const count = sales.length + 1;
+    // 2. Generate Invoice Number for this company
+    const compSales = sales.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+    const count = compSales.length + 1;
     const invNumber = `INV-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
 
     const newInvoice: SaleInvoice = {
       ...invoiceData,
+      companyId: targetCompId,
       id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       invoiceNumber: invNumber,
       createdAt: new Date().toISOString()
@@ -449,7 +461,11 @@ export const StorageService = {
 
     // 3. Reduce Product Stock
     for (const item of invoiceData.items) {
-      const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
+      const pIndex = products.findIndex(
+        (p) =>
+          (p.id === item.productId || p.code === item.productCode) &&
+          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
       if (pIndex !== -1) {
         products[pIndex].currentStock -= Number(item.quantity);
       }
@@ -458,7 +474,9 @@ export const StorageService = {
 
     // 4. Update Customer Outstanding if credit or remaining due
     if (invoiceData.customerId && invoiceData.dueAmount > 0) {
-      const cIndex = customers.findIndex((c) => c.id === invoiceData.customerId);
+      const cIndex = customers.findIndex(
+        (c) => c.id === invoiceData.customerId && (c.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
       if (cIndex !== -1) {
         customers[cIndex].outstandingBalance += Number(invoiceData.dueAmount);
         setItem(STORAGE_KEYS.CUSTOMERS, customers);
@@ -518,18 +536,22 @@ export const StorageService = {
   },
 
   createPurchaseInvoice(
-    purchaseData: Omit<PurchaseInvoice, 'id' | 'purchaseNumber' | 'createdAt'>
+    purchaseData: Omit<PurchaseInvoice, 'id' | 'purchaseNumber' | 'createdAt'>,
+    companyId?: string
   ): PurchaseInvoice {
     const purchases = this.getPurchases();
+    const targetCompId = purchaseData.companyId || companyId || DEFAULT_COMPANY_ID;
     const products = this.getProducts();
     const suppliers = this.getSuppliers();
 
-    // 1. Generate Purchase Number
-    const count = purchases.length + 1;
+    // 1. Generate Purchase Number for target company
+    const compPurchases = purchases.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+    const count = compPurchases.length + 1;
     const purNumber = `PUR-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
 
     const newPurchase: PurchaseInvoice = {
       ...purchaseData,
+      companyId: targetCompId,
       id: `pur-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       purchaseNumber: purNumber,
       createdAt: new Date().toISOString()
@@ -537,7 +559,11 @@ export const StorageService = {
 
     // 2. Increase Product Stock
     for (const item of purchaseData.items) {
-      const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
+      const pIndex = products.findIndex(
+        (p) =>
+          (p.id === item.productId || p.code === item.productCode) &&
+          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
       if (pIndex !== -1) {
         products[pIndex].currentStock += Number(item.quantity);
         // Update cost price if provided
@@ -550,7 +576,9 @@ export const StorageService = {
 
     // 3. Update Supplier Payable
     if (purchaseData.supplierId && purchaseData.dueAmount > 0) {
-      const sIndex = suppliers.findIndex((s) => s.id === purchaseData.supplierId);
+      const sIndex = suppliers.findIndex(
+        (s) => s.id === purchaseData.supplierId && (s.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
       if (sIndex !== -1) {
         suppliers[sIndex].payableBalance += Number(purchaseData.dueAmount);
         setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
@@ -608,23 +636,31 @@ export const StorageService = {
     return all.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
 
-  createCustomerReceipt(receiptData: Omit<CustomerReceipt, 'id' | 'receiptNumber' | 'createdAt'>): CustomerReceipt {
+  createCustomerReceipt(
+    receiptData: Omit<CustomerReceipt, 'id' | 'receiptNumber' | 'createdAt'>,
+    companyId?: string
+  ): CustomerReceipt {
     const receipts = this.getReceipts();
+    const targetCompId = receiptData.companyId || companyId || DEFAULT_COMPANY_ID;
     const customers = this.getCustomers();
     const sales = this.getSales();
 
-    const count = receipts.length + 1;
+    const compReceipts = receipts.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+    const count = compReceipts.length + 1;
     const recNumber = `REC-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
 
     const newReceipt: CustomerReceipt = {
       ...receiptData,
+      companyId: targetCompId,
       id: `rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       receiptNumber: recNumber,
       createdAt: new Date().toISOString()
     };
 
     // 1. Reduce Customer Outstanding
-    const cIndex = customers.findIndex((c) => c.id === receiptData.customerId);
+    const cIndex = customers.findIndex(
+      (c) => c.id === receiptData.customerId && (c.companyId || DEFAULT_COMPANY_ID) === targetCompId
+    );
     if (cIndex !== -1) {
       customers[cIndex].outstandingBalance = Math.max(
         0,
@@ -637,7 +673,9 @@ export const StorageService = {
     if (receiptData.allocations && receiptData.allocations.length > 0) {
       for (const alloc of receiptData.allocations) {
         if (alloc.allocatedAmount > 0) {
-          const sIndex = sales.findIndex((s) => s.id === alloc.invoiceId);
+          const sIndex = sales.findIndex(
+            (s) => s.id === alloc.invoiceId && (s.companyId || DEFAULT_COMPANY_ID) === targetCompId
+          );
           if (sIndex !== -1) {
             sales[sIndex].paidAmount = Number((sales[sIndex].paidAmount + alloc.allocatedAmount).toFixed(2));
             sales[sIndex].dueAmount = Math.max(0, Number((sales[sIndex].grandTotal - sales[sIndex].paidAmount).toFixed(2)));
@@ -698,23 +736,31 @@ export const StorageService = {
     return all.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
 
-  createSupplierPayment(paymentData: Omit<SupplierPayment, 'id' | 'paymentNumber' | 'createdAt'>): SupplierPayment {
+  createSupplierPayment(
+    paymentData: Omit<SupplierPayment, 'id' | 'paymentNumber' | 'createdAt'>,
+    companyId?: string
+  ): SupplierPayment {
     const payments = this.getPayments();
+    const targetCompId = paymentData.companyId || companyId || DEFAULT_COMPANY_ID;
     const suppliers = this.getSuppliers();
     const purchases = this.getPurchases();
 
-    const count = payments.length + 1;
+    const compPayments = payments.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+    const count = compPayments.length + 1;
     const payNumber = `PAY-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
 
     const newPayment: SupplierPayment = {
       ...paymentData,
+      companyId: targetCompId,
       id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       paymentNumber: payNumber,
       createdAt: new Date().toISOString()
     };
 
     // 1. Reduce Supplier Payable
-    const sIndex = suppliers.findIndex((s) => s.id === paymentData.supplierId);
+    const sIndex = suppliers.findIndex(
+      (s) => s.id === paymentData.supplierId && (s.companyId || DEFAULT_COMPANY_ID) === targetCompId
+    );
     if (sIndex !== -1) {
       suppliers[sIndex].payableBalance = Math.max(
         0,
@@ -727,7 +773,9 @@ export const StorageService = {
     if (paymentData.allocations && paymentData.allocations.length > 0) {
       for (const alloc of paymentData.allocations) {
         if (alloc.allocatedAmount > 0) {
-          const pIndex = purchases.findIndex((p) => p.id === alloc.purchaseId);
+          const pIndex = purchases.findIndex(
+            (p) => p.id === alloc.purchaseId && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
+          );
           if (pIndex !== -1) {
             purchases[pIndex].paidAmount = Number((purchases[pIndex].paidAmount + alloc.allocatedAmount).toFixed(2));
             purchases[pIndex].dueAmount = Math.max(0, Number((purchases[pIndex].grandTotal - purchases[pIndex].paidAmount).toFixed(2)));
@@ -788,14 +836,20 @@ export const StorageService = {
     return all.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) === companyId);
   },
 
-  createExpense(expenseData: Omit<Expense, 'id' | 'expenseNumber' | 'createdAt'>): Expense {
+  createExpense(
+    expenseData: Omit<Expense, 'id' | 'expenseNumber' | 'createdAt'>,
+    companyId?: string
+  ): Expense {
     const expenses = this.getExpenses();
+    const targetCompId = expenseData.companyId || companyId || DEFAULT_COMPANY_ID;
 
-    const count = expenses.length + 1;
+    const compExpenses = expenses.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+    const count = compExpenses.length + 1;
     const expNumber = `EXP-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
 
     const newExpense: Expense = {
       ...expenseData,
+      companyId: targetCompId,
       id: `exp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       expenseNumber: expNumber,
       createdAt: new Date().toISOString()
@@ -1137,7 +1191,8 @@ export const StorageService = {
   // --- MULTI-DEVICE CLOUD PULL ---
   async pullFromSupabase(companyId?: string): Promise<{ success: boolean; pulledCounts?: Record<string, number>; error?: string }> {
     try {
-      const [remoteProducts, remoteCustomers, remoteSuppliers, remoteSales, remotePurchases, remoteReceipts, remotePayments, remoteExpenses] = await Promise.all([
+      const [remoteCompanies, remoteProducts, remoteCustomers, remoteSuppliers, remoteSales, remotePurchases, remoteReceipts, remotePayments, remoteExpenses] = await Promise.all([
+        SupabaseSyncService.fetchAllRemoteCompanies(),
         SupabaseSyncService.fetchAllRemoteProducts(companyId),
         SupabaseSyncService.fetchAllRemoteCustomers(companyId),
         SupabaseSyncService.fetchAllRemoteSuppliers(companyId),
@@ -1149,6 +1204,21 @@ export const StorageService = {
       ]);
 
       const pulledCounts: Record<string, number> = {};
+
+      if (remoteCompanies !== null) {
+        const localComp = getItem<Company[]>(STORAGE_KEYS.COMPANIES, INITIAL_COMPANIES);
+        const remoteMap = new Map<string, Company>();
+        remoteCompanies.forEach((r) => remoteMap.set(r.id, r));
+        const mergedComp: Company[] = [...remoteCompanies];
+        localComp.forEach((loc) => {
+          if (!remoteMap.has(loc.id)) {
+            mergedComp.push(loc);
+            SupabaseSyncService.syncCompany(loc).catch(() => {});
+          }
+        });
+        setItem(STORAGE_KEYS.COMPANIES, mergedComp);
+        pulledCounts.companies = mergedComp.length;
+      }
 
       if (remoteProducts !== null) {
         const local = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, []);

@@ -155,6 +155,7 @@ export default function App() {
   // Reload all states from Storage Engine (Company Isolated)
   const refreshAllStates = (compId?: string) => {
     const activeCompId = compId || session?.company?.id;
+    setCompanies(StorageService.getCompanies());
     setSettings(StorageService.getSettings());
     setCustomers(StorageService.getCustomers(activeCompId));
     setSuppliers(StorageService.getSuppliers(activeCompId));
@@ -243,9 +244,10 @@ export default function App() {
   };
 
   const handleSaveCompany = (compData: Partial<Company>) => {
-    StorageService.saveCompany(compData);
+    const savedComp = StorageService.saveCompany(compData);
     setCompanies(StorageService.getCompanies());
     refreshSession();
+    addToast('success', `Company "${savedComp.companyName}" saved successfully.`);
   };
 
   const handleToggleCompanyStatus = (companyId: string, disable: boolean) => {
@@ -261,8 +263,8 @@ export default function App() {
 
   // Handlers for Customers
   const handleSaveCustomer = (custData: Partial<Customer>) => {
-    StorageService.saveCustomer(custData);
-    refreshAllStates();
+    StorageService.saveCustomer(custData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         custData.id ? 'CUSTOMER_EDITED' : 'CUSTOMER_CREATED',
@@ -276,7 +278,7 @@ export default function App() {
 
   const handleDeleteCustomer = (id: string) => {
     StorageService.deleteCustomer(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('CUSTOMER_DELETED', 'customers', `Deleted customer record ${id}`, id);
     }
@@ -285,8 +287,8 @@ export default function App() {
 
   // Handlers for Suppliers
   const handleSaveSupplier = (suppData: Partial<Supplier>) => {
-    StorageService.saveSupplier(suppData);
-    refreshAllStates();
+    StorageService.saveSupplier(suppData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         suppData.id ? 'SUPPLIER_EDITED' : 'SUPPLIER_CREATED',
@@ -300,7 +302,7 @@ export default function App() {
 
   const handleDeleteSupplier = (id: string) => {
     StorageService.deleteSupplier(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('SUPPLIER_DELETED', 'suppliers', `Deleted supplier record ${id}`, id);
     }
@@ -309,8 +311,8 @@ export default function App() {
 
   // Handlers for Products
   const handleSaveProduct = (prodData: Partial<Product>) => {
-    StorageService.saveProduct(prodData);
-    refreshAllStates();
+    StorageService.saveProduct(prodData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         prodData.id ? 'PRODUCT_EDITED' : 'PRODUCT_CREATED',
@@ -323,7 +325,7 @@ export default function App() {
 
   const handleDeleteProduct = (id: string) => {
     StorageService.deleteProduct(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('PRODUCT_DELETED', 'products', `Deleted product ${id}`, id);
     }
@@ -333,8 +335,8 @@ export default function App() {
   const handleCreateSaleInvoice = (
     invoiceData: Omit<SaleInvoice, 'id' | 'invoiceNumber' | 'createdAt'>
   ) => {
-    const newInv = StorageService.createSaleInvoice(invoiceData);
-    refreshAllStates();
+    const newInv = StorageService.createSaleInvoice(invoiceData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         'SALE_CREATED',
@@ -348,7 +350,7 @@ export default function App() {
 
   const handleDeleteSaleInvoice = (id: string) => {
     StorageService.deleteSaleInvoice(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('SALE_DELETED', 'sales', `Voided sale invoice ${id}`, id);
     }
@@ -358,8 +360,8 @@ export default function App() {
   const handleCreatePurchaseInvoice = (
     purchaseData: Omit<PurchaseInvoice, 'id' | 'purchaseNumber' | 'createdAt'>
   ) => {
-    const newPur = StorageService.createPurchaseInvoice(purchaseData);
-    refreshAllStates();
+    const newPur = StorageService.createPurchaseInvoice(purchaseData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         'PURCHASE_CREATED',
@@ -373,7 +375,7 @@ export default function App() {
 
   const handleDeletePurchaseInvoice = (id: string) => {
     StorageService.deletePurchaseInvoice(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('PURCHASE_DELETED', 'purchases', `Voided purchase bill ${id}`, id);
     }
@@ -384,8 +386,8 @@ export default function App() {
   const handleCreateReceipt = (
     receiptData: Omit<CustomerReceipt, 'id' | 'receiptNumber' | 'createdAt'>
   ) => {
-    const rec = StorageService.createCustomerReceipt(receiptData);
-    refreshAllStates();
+    const rec = StorageService.createCustomerReceipt(receiptData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         'RECEIPT_CREATED',
@@ -399,7 +401,7 @@ export default function App() {
 
   const handleDeleteReceipt = (id: string) => {
     StorageService.deleteCustomerReceipt(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('RECEIPT_DELETED', 'customer_receipts', `Voided receipt ${id}`, id);
     }
@@ -409,8 +411,8 @@ export default function App() {
   const handleCreatePayment = (
     paymentData: Omit<SupplierPayment, 'id' | 'paymentNumber' | 'createdAt'>
   ) => {
-    const pay = StorageService.createSupplierPayment(paymentData);
-    refreshAllStates();
+    const pay = StorageService.createSupplierPayment(paymentData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         'PAYMENT_CREATED',
@@ -424,7 +426,7 @@ export default function App() {
 
   const handleDeletePayment = (id: string) => {
     StorageService.deleteSupplierPayment(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('PAYMENT_DELETED', 'supplier_payments', `Voided payment ${id}`, id);
     }
@@ -434,8 +436,8 @@ export default function App() {
   const handleCreateExpense = (
     expenseData: Omit<Expense, 'id' | 'expenseNumber' | 'createdAt'>
   ) => {
-    const exp = StorageService.createExpense(expenseData);
-    refreshAllStates();
+    const exp = StorageService.createExpense(expenseData, activeCompId);
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog(
         'EXPENSE_CREATED',
@@ -449,7 +451,7 @@ export default function App() {
 
   const handleDeleteExpense = (id: string) => {
     StorageService.deleteExpense(id);
-    refreshAllStates();
+    refreshAllStates(activeCompId);
     if (session) {
       AuthService.recordAuditLog('EXPENSE_DELETED', 'expenses', `Removed expense record ${id}`, id);
     }

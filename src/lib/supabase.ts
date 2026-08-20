@@ -232,6 +232,99 @@ async function ensureCompanyExists(client: SupabaseClient, companyId?: string): 
 // ==========================================
 
 export const SupabaseSyncService = {
+  // --- COMPANIES ---
+  async syncCompany(company: Company): Promise<{ success: boolean; error?: string }> {
+    const client = getSupabaseClient();
+    if (!client) return { success: false, error: 'Supabase not configured' };
+
+    try {
+      const payload = {
+        id: company.id,
+        company_name: company.companyName,
+        short_name: company.shortName,
+        address: company.address || '',
+        city: company.city || 'Colombo',
+        district: company.district || 'Colombo',
+        country: company.country || 'Sri Lanka',
+        telephone: company.telephone || '',
+        mobile: company.mobile || '',
+        company_email: company.companyEmail || '',
+        tax_registration_no: company.taxRegistrationNo || '',
+        currency: company.currency || 'Rs.',
+        financial_year_start: company.financialYearStart || '2026-01-01',
+        financial_year_end: company.financialYearEnd || '2026-12-31',
+        invoice_prefix: company.invoicePrefix || 'INV',
+        invoice_number: company.invoiceNumber || 1001,
+        is_active: company.isActive !== undefined ? company.isActive : true,
+        is_vat_enabled: company.isVatEnabled !== undefined ? company.isVatEnabled : true,
+        vat_number: company.vatNumber || '',
+        default_vat_rate: company.defaultVatRate || 0,
+        vat_type: company.vatType || 'EXCLUSIVE',
+        is_item_discount_enabled: company.isItemDiscountEnabled !== undefined ? company.isItemDiscountEnabled : true,
+        default_discount_type: company.defaultDiscountType || 'PERCENT',
+        created_at: company.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await client
+        .from('companies')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) {
+        console.warn('Supabase company sync error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
+      console.warn('Supabase company sync exception:', e);
+      return { success: false, error: e?.message };
+    }
+  },
+
+  async fetchAllRemoteCompanies(): Promise<Company[] | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+    try {
+      const { data, error } = await client
+        .from('companies')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error || !data) return null;
+
+      return data.map((row: any) => ({
+        id: row.id,
+        companyName: row.company_name || row.companyName || 'Unnamed Company',
+        shortName: row.short_name || row.shortName || 'COMP',
+        address: row.address || '',
+        city: row.city || 'Colombo',
+        district: row.district || 'Colombo',
+        country: row.country || 'Sri Lanka',
+        telephone: row.telephone || '',
+        mobile: row.mobile || '',
+        companyEmail: row.company_email || row.companyEmail || '',
+        taxRegistrationNo: row.tax_registration_no || row.taxRegistrationNo || '',
+        currency: row.currency || 'Rs.',
+        financialYearStart: row.financial_year_start || row.financialYearStart || '2026-01-01',
+        financialYearEnd: row.financial_year_end || row.financialYearEnd || '2026-12-31',
+        invoicePrefix: row.invoice_prefix || row.invoicePrefix || 'INV',
+        invoiceNumber: row.invoice_number || row.invoiceNumber || 1001,
+        isActive: row.is_active !== undefined ? row.is_active : (row.isActive !== undefined ? row.isActive : true),
+        isVatEnabled: row.is_vat_enabled !== undefined ? row.is_vat_enabled : (row.isVatEnabled !== undefined ? row.isVatEnabled : true),
+        vatNumber: row.vat_number || row.vatNumber || '',
+        defaultVatRate: row.default_vat_rate !== undefined ? Number(row.default_vat_rate) : 0,
+        vatType: row.vat_type || row.vatType || 'EXCLUSIVE',
+        isItemDiscountEnabled: row.is_item_discount_enabled !== undefined ? row.is_item_discount_enabled : (row.isItemDiscountEnabled !== undefined ? row.isItemDiscountEnabled : true),
+        defaultDiscountType: row.default_discount_type || row.defaultDiscountType || 'PERCENT',
+        createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+        updatedAt: row.updated_at || row.updatedAt || new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Error fetching companies from Supabase:', e);
+      return null;
+    }
+  },
+
   // --- PRODUCTS ---
   async syncProduct(product: Product): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();

@@ -511,14 +511,14 @@ export const AuthService = {
 
   getUserAssignedCompanies(user: AppUser): Company[] {
     const allCompanies = StorageService.getCompanies().filter((c) => c.isActive);
-    if (user.roleId === 'role-admin' || user.username === 'admin') {
+    if (user.roleId === 'role-admin' || user.username === 'admin' || user.roleName === 'Administrator') {
       return allCompanies;
     }
     if (user.assignedCompanyIds && user.assignedCompanyIds.length > 0) {
       const filtered = allCompanies.filter((c) => user.assignedCompanyIds?.includes(c.id));
       if (filtered.length > 0) return filtered;
     }
-    return [allCompanies[0]];
+    return allCompanies;
   },
 
   switchCompany(targetCompanyId: string): AuthSession {
