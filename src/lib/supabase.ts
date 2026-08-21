@@ -294,14 +294,30 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deleteUser(userId: string): Promise<void> {
+  async deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
 
     try {
-      await client.from('app_users').delete().eq('id', userId);
-    } catch (e) {
+      try {
+        await client.from('user_company_assignments').delete().eq('user_id', userId);
+      } catch {
+        // Non-blocking
+      }
+      try {
+        await client.from('user_permissions').delete().eq('user_id', userId);
+      } catch {
+        // Non-blocking
+      }
+      const { error } = await client.from('app_users').delete().eq('id', userId);
+      if (error) {
+        console.warn('Supabase user delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.error('Error deleting user from Supabase:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -486,13 +502,25 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deleteProduct(productId: string): Promise<void> {
+  async deleteProduct(productId: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_products').delete().eq('id', productId);
-    } catch (e) {
+      try {
+        await client.from('busy_ufo_sale_items').update({ product_id: null }).eq('product_id', productId);
+      } catch {}
+      try {
+        await client.from('busy_ufo_purchase_items').update({ product_id: null }).eq('product_id', productId);
+      } catch {}
+      const { error } = await client.from('busy_ufo_products').delete().eq('id', productId);
+      if (error) {
+        console.warn('Supabase product delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase product delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -533,13 +561,25 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deleteCustomer(customerId: string): Promise<void> {
+  async deleteCustomer(customerId: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_customers').delete().eq('id', customerId);
-    } catch (e) {
+      try {
+        await client.from('busy_ufo_sales').update({ customer_id: null }).eq('customer_id', customerId);
+      } catch {}
+      try {
+        await client.from('busy_ufo_customer_receipts').update({ customer_id: null }).eq('customer_id', customerId);
+      } catch {}
+      const { error } = await client.from('busy_ufo_customers').delete().eq('id', customerId);
+      if (error) {
+        console.warn('Supabase customer delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase customer delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -580,13 +620,25 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deleteSupplier(supplierId: string): Promise<void> {
+  async deleteSupplier(supplierId: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_suppliers').delete().eq('id', supplierId);
-    } catch (e) {
+      try {
+        await client.from('busy_ufo_purchases').update({ supplier_id: null }).eq('supplier_id', supplierId);
+      } catch {}
+      try {
+        await client.from('busy_ufo_supplier_payments').update({ supplier_id: null }).eq('supplier_id', supplierId);
+      } catch {}
+      const { error } = await client.from('busy_ufo_suppliers').delete().eq('id', supplierId);
+      if (error) {
+        console.warn('Supabase supplier delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase supplier delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -650,13 +702,32 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deleteSaleInvoice(invoiceId: string): Promise<void> {
+  async deleteSaleInvoice(invoiceId: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_sales').delete().eq('id', invoiceId);
-    } catch (e) {
+      // 1. Delete child items first
+      try {
+        await client.from('busy_ufo_sale_items').delete().eq('invoice_id', invoiceId);
+      } catch (err) {
+        console.warn('Warning deleting sale items child rows:', err);
+      }
+
+      // 2. Unlink any receipts referencing this invoice
+      try {
+        await client.from('busy_ufo_customer_receipts').update({ invoice_id: null }).eq('invoice_id', invoiceId);
+      } catch {}
+
+      // 3. Delete parent sale invoice
+      const { error } = await client.from('busy_ufo_sales').delete().eq('id', invoiceId);
+      if (error) {
+        console.warn('Supabase sale delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase sale delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -719,13 +790,32 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deletePurchaseInvoice(purchaseId: string): Promise<void> {
+  async deletePurchaseInvoice(purchaseId: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_purchases').delete().eq('id', purchaseId);
-    } catch (e) {
+      // 1. Delete child purchase items first
+      try {
+        await client.from('busy_ufo_purchase_items').delete().eq('purchase_id', purchaseId);
+      } catch (err) {
+        console.warn('Warning deleting purchase items child rows:', err);
+      }
+
+      // 2. Unlink any payments referencing this purchase
+      try {
+        await client.from('busy_ufo_supplier_payments').update({ purchase_id: null }).eq('purchase_id', purchaseId);
+      } catch {}
+
+      // 3. Delete parent purchase
+      const { error } = await client.from('busy_ufo_purchases').delete().eq('id', purchaseId);
+      if (error) {
+        console.warn('Supabase purchase delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase purchase delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -755,13 +845,19 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deleteReceipt(id: string): Promise<void> {
+  async deleteReceipt(id: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_customer_receipts').delete().eq('id', id);
-    } catch (e) {
+      const { error } = await client.from('busy_ufo_customer_receipts').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase receipt delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase receipt delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -790,13 +886,19 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deletePayment(id: string): Promise<void> {
+  async deletePayment(id: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_supplier_payments').delete().eq('id', id);
-    } catch (e) {
+      const { error } = await client.from('busy_ufo_supplier_payments').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase payment delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase payment delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 
@@ -823,13 +925,19 @@ export const SupabaseSyncService = {
     }
   },
 
-  async deleteExpense(id: string): Promise<void> {
+  async deleteExpense(id: string): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) return { success: false, error: 'Supabase not configured' };
     try {
-      await client.from('busy_ufo_expenses').delete().eq('id', id);
-    } catch (e) {
+      const { error } = await client.from('busy_ufo_expenses').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase expense delete error:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (e: any) {
       console.warn('Supabase expense delete exception:', e);
+      return { success: false, error: e?.message };
     }
   },
 

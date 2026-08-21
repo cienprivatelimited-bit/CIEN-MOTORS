@@ -117,7 +117,9 @@ export const AuthService = {
 
   // --- USERS MANAGEMENT ---
   getUsers(): AppUser[] {
-    return getStored<AppUser[]>(AUTH_STORAGE_KEYS.USERS, []);
+    const deleted = StorageService.getDeletedIds ? StorageService.getDeletedIds() : new Set<string>();
+    const users = getStored<AppUser[]>(AUTH_STORAGE_KEYS.USERS, []);
+    return users.filter((u) => u && u.id && !deleted.has(u.id));
   },
 
   getUserById(userId: string): AppUser | undefined {
@@ -273,7 +275,10 @@ export const AuthService = {
     const users = this.getUsers();
     users.push(newUser);
     setStored(AUTH_STORAGE_KEYS.USERS, users);
-    SupabaseSyncService.syncUser(newUser).catch(() => {});
+    StorageService.addPendingSyncId('users', newUser.id);
+    SupabaseSyncService.syncUser(newUser).then((res) => {
+      if (res?.success) StorageService.removePendingSyncId('users', newUser.id);
+    }).catch(() => {});
 
     this.recordAuditLog(
       'USER_CREATED',
@@ -347,7 +352,10 @@ export const AuthService = {
 
     users[idx] = updatedUser;
     setStored(AUTH_STORAGE_KEYS.USERS, users);
-    SupabaseSyncService.syncUser(updatedUser).catch(() => {});
+    StorageService.addPendingSyncId('users', updatedUser.id);
+    SupabaseSyncService.syncUser(updatedUser).then((res) => {
+      if (res?.success) StorageService.removePendingSyncId('users', updatedUser.id);
+    }).catch(() => {});
 
     if (wasActive !== updatedUser.isActive) {
       this.recordAuditLog(
@@ -394,7 +402,10 @@ export const AuthService = {
     };
 
     setStored(AUTH_STORAGE_KEYS.USERS, users);
-    SupabaseSyncService.syncUser(users[idx]).catch(() => {});
+    StorageService.addPendingSyncId('users', userId);
+    SupabaseSyncService.syncUser(users[idx]).then((res) => {
+      if (res?.success) StorageService.removePendingSyncId('users', userId);
+    }).catch(() => {});
 
     this.recordAuditLog(
       'PASSWORD_RESET',
@@ -436,7 +447,10 @@ export const AuthService = {
     };
 
     setStored(AUTH_STORAGE_KEYS.USERS, users);
-    SupabaseSyncService.syncUser(users[idx]).catch(() => {});
+    StorageService.addPendingSyncId('users', userId);
+    SupabaseSyncService.syncUser(users[idx]).then((res) => {
+      if (res?.success) StorageService.removePendingSyncId('users', userId);
+    }).catch(() => {});
 
     this.recordAuditLog(
       'PASSWORD_CHANGED',
@@ -465,7 +479,10 @@ export const AuthService = {
 
     users[idx] = updatedUser;
     setStored(AUTH_STORAGE_KEYS.USERS, users);
-    SupabaseSyncService.syncUser(updatedUser).catch(() => {});
+    StorageService.addPendingSyncId('users', userId);
+    SupabaseSyncService.syncUser(updatedUser).then((res) => {
+      if (res?.success) StorageService.removePendingSyncId('users', userId);
+    }).catch(() => {});
 
     this.recordAuditLog(
       'RIGHTS_CHANGED',
@@ -503,6 +520,9 @@ export const AuthService = {
         throw new Error('Cannot delete the only Administrator account in the system.');
       }
     }
+
+    StorageService.addDeletedId(userId);
+    StorageService.removePendingSyncId('users', userId);
 
     const filtered = users.filter((u) => u.id !== userId);
     setStored(AUTH_STORAGE_KEYS.USERS, filtered);

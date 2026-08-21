@@ -47,7 +47,8 @@ const STORAGE_KEYS = {
   WAREHOUSES: 'busy_ufo_warehouses',
   IMPORT_HISTORY: 'busy_ufo_import_history',
   USERS: 'busy_ufo_users',
-  DELETED_IDS: 'busy_ufo_deleted_ids'
+  DELETED_IDS: 'busy_ufo_deleted_ids',
+  PENDING_SYNC: 'busy_ufo_pending_sync'
 };
 
 const DEFAULT_COMPANY_ID = 'comp-1';
@@ -63,6 +64,31 @@ function addDeletedId(id: string): void {
   if (!set.has(id)) {
     set.add(id);
     setItem(STORAGE_KEYS.DELETED_IDS, Array.from(set));
+  }
+}
+
+function getPendingSyncIds(type: string): Set<string> {
+  const raw = getItem<Record<string, string[]>>(STORAGE_KEYS.PENDING_SYNC, {});
+  return new Set(Array.isArray(raw[type]) ? raw[type] : []);
+}
+
+function addPendingSyncId(type: string, id: string): void {
+  if (!id) return;
+  const raw = getItem<Record<string, string[]>>(STORAGE_KEYS.PENDING_SYNC, {});
+  const list = Array.isArray(raw[type]) ? raw[type] : [];
+  if (!list.includes(id)) {
+    list.push(id);
+    raw[type] = list;
+    setItem(STORAGE_KEYS.PENDING_SYNC, raw);
+  }
+}
+
+function removePendingSyncId(type: string, id: string): void {
+  if (!id) return;
+  const raw = getItem<Record<string, string[]>>(STORAGE_KEYS.PENDING_SYNC, {});
+  if (Array.isArray(raw[type])) {
+    raw[type] = raw[type].filter((item) => item !== id);
+    setItem(STORAGE_KEYS.PENDING_SYNC, raw);
   }
 }
 
@@ -163,7 +189,10 @@ export const StorageService = {
         } as Company;
         companies[index] = updated;
         setItem(STORAGE_KEYS.COMPANIES, companies);
-        SupabaseSyncService.syncCompany(updated).catch(() => {});
+        addPendingSyncId('companies', updated.id);
+        SupabaseSyncService.syncCompany(updated).then((res) => {
+          if (res?.success) removePendingSyncId('companies', updated.id);
+        }).catch(() => {});
         return updated;
       }
     }
@@ -198,7 +227,10 @@ export const StorageService = {
 
     companies.push(newCompany);
     setItem(STORAGE_KEYS.COMPANIES, companies);
-    SupabaseSyncService.syncCompany(newCompany).catch(() => {});
+    addPendingSyncId('companies', newCompany.id);
+    SupabaseSyncService.syncCompany(newCompany).then((res) => {
+      if (res?.success) removePendingSyncId('companies', newCompany.id);
+    }).catch(() => {});
     return newCompany;
   },
 
@@ -209,7 +241,10 @@ export const StorageService = {
       companies[idx].isActive = !disable;
       companies[idx].updatedAt = new Date().toISOString();
       setItem(STORAGE_KEYS.COMPANIES, companies);
-      SupabaseSyncService.syncCompany(companies[idx]).catch(() => {});
+      addPendingSyncId('companies', companies[idx].id);
+      SupabaseSyncService.syncCompany(companies[idx]).then((res) => {
+        if (res?.success) removePendingSyncId('companies', companies[idx].id);
+      }).catch(() => {});
     }
   },
   // --- SETTINGS ---
@@ -246,7 +281,10 @@ export const StorageService = {
         } as Customer;
         all[index] = updated;
         setItem(STORAGE_KEYS.CUSTOMERS, all);
-        SupabaseSyncService.syncCustomer(updated);
+        addPendingSyncId('customers', updated.id);
+        SupabaseSyncService.syncCustomer(updated).then((res) => {
+          if (res?.success) removePendingSyncId('customers', updated.id);
+        }).catch(() => {});
         return updated;
       }
     }
@@ -277,15 +315,19 @@ export const StorageService = {
 
     all.unshift(newCust);
     setItem(STORAGE_KEYS.CUSTOMERS, all);
-    SupabaseSyncService.syncCustomer(newCust);
+    addPendingSyncId('customers', newCust.id);
+    SupabaseSyncService.syncCustomer(newCust).then((res) => {
+      if (res?.success) removePendingSyncId('customers', newCust.id);
+    }).catch(() => {});
     return newCust;
   },
 
   deleteCustomer(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('customers', id);
     const all = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS).filter((c) => c.id !== id);
     setItem(STORAGE_KEYS.CUSTOMERS, all);
-    SupabaseSyncService.deleteCustomer(id);
+    SupabaseSyncService.deleteCustomer(id).catch(() => {});
   },
 
   // --- SUPPLIERS ---
@@ -312,7 +354,10 @@ export const StorageService = {
         } as Supplier;
         all[index] = updated;
         setItem(STORAGE_KEYS.SUPPLIERS, all);
-        SupabaseSyncService.syncSupplier(updated);
+        addPendingSyncId('suppliers', updated.id);
+        SupabaseSyncService.syncSupplier(updated).then((res) => {
+          if (res?.success) removePendingSyncId('suppliers', updated.id);
+        }).catch(() => {});
         return updated;
       }
     }
@@ -342,15 +387,19 @@ export const StorageService = {
 
     all.unshift(newSupp);
     setItem(STORAGE_KEYS.SUPPLIERS, all);
-    SupabaseSyncService.syncSupplier(newSupp);
+    addPendingSyncId('suppliers', newSupp.id);
+    SupabaseSyncService.syncSupplier(newSupp).then((res) => {
+      if (res?.success) removePendingSyncId('suppliers', newSupp.id);
+    }).catch(() => {});
     return newSupp;
   },
 
   deleteSupplier(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('suppliers', id);
     const all = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS).filter((s) => s.id !== id);
     setItem(STORAGE_KEYS.SUPPLIERS, all);
-    SupabaseSyncService.deleteSupplier(id);
+    SupabaseSyncService.deleteSupplier(id).catch(() => {});
   },
 
   // --- PRODUCTS ---
@@ -400,7 +449,10 @@ export const StorageService = {
         } as Product;
         all[index] = updated;
         setItem(STORAGE_KEYS.PRODUCTS, all);
-        SupabaseSyncService.syncProduct(updated);
+        addPendingSyncId('products', updated.id);
+        SupabaseSyncService.syncProduct(updated).then((res) => {
+          if (res?.success) removePendingSyncId('products', updated.id);
+        }).catch(() => {});
         return updated;
       }
     }
@@ -435,15 +487,19 @@ export const StorageService = {
 
     all.unshift(newProd);
     setItem(STORAGE_KEYS.PRODUCTS, all);
-    SupabaseSyncService.syncProduct(newProd);
+    addPendingSyncId('products', newProd.id);
+    SupabaseSyncService.syncProduct(newProd).then((res) => {
+      if (res?.success) removePendingSyncId('products', newProd.id);
+    }).catch(() => {});
     return newProd;
   },
 
   deleteProduct(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('products', id);
     const all = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS).filter((p) => p.id !== id);
     setItem(STORAGE_KEYS.PRODUCTS, all);
-    SupabaseSyncService.deleteProduct(id);
+    SupabaseSyncService.deleteProduct(id).catch(() => {});
   },
 
   // --- SALES & INVOICES ---
@@ -523,13 +579,17 @@ export const StorageService = {
     // 5. Save Sales
     sales.unshift(newInvoice);
     setItem(STORAGE_KEYS.SALES, sales);
-    SupabaseSyncService.syncSaleInvoice(newInvoice);
+    addPendingSyncId('sales', newInvoice.id);
+    SupabaseSyncService.syncSaleInvoice(newInvoice).then((res) => {
+      if (res?.success) removePendingSyncId('sales', newInvoice.id);
+    }).catch(() => {});
 
     return newInvoice;
   },
 
   deleteSaleInvoice(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('sales', id);
     const sales = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);
     const products = this.getProducts();
     const customers = this.getCustomers();
@@ -564,7 +624,7 @@ export const StorageService = {
 
     const cleanSales = sales.filter((s) => s.id !== id);
     setItem(STORAGE_KEYS.SALES, cleanSales);
-    SupabaseSyncService.deleteSaleInvoice(id);
+    SupabaseSyncService.deleteSaleInvoice(id).catch(() => {});
   },
 
   // --- PURCHASES ---
@@ -628,13 +688,17 @@ export const StorageService = {
 
     purchases.unshift(newPurchase);
     setItem(STORAGE_KEYS.PURCHASES, purchases);
-    SupabaseSyncService.syncPurchaseInvoice(newPurchase);
+    addPendingSyncId('purchases', newPurchase.id);
+    SupabaseSyncService.syncPurchaseInvoice(newPurchase).then((res) => {
+      if (res?.success) removePendingSyncId('purchases', newPurchase.id);
+    }).catch(() => {});
 
     return newPurchase;
   },
 
   deletePurchaseInvoice(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('purchases', id);
     const purchases = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, INITIAL_PURCHASES);
     const products = this.getProducts();
     const suppliers = this.getSuppliers();
@@ -669,7 +733,7 @@ export const StorageService = {
 
     const cleanPurchases = purchases.filter((p) => p.id !== id);
     setItem(STORAGE_KEYS.PURCHASES, cleanPurchases);
-    SupabaseSyncService.deletePurchaseInvoice(id);
+    SupabaseSyncService.deletePurchaseInvoice(id).catch(() => {});
   },
 
   // --- CUSTOMER RECEIPTS ---
@@ -732,13 +796,17 @@ export const StorageService = {
 
     receipts.unshift(newReceipt);
     setItem(STORAGE_KEYS.RECEIPTS, receipts);
-    SupabaseSyncService.syncReceipt(newReceipt);
+    addPendingSyncId('receipts', newReceipt.id);
+    SupabaseSyncService.syncReceipt(newReceipt).then((res) => {
+      if (res?.success) removePendingSyncId('receipts', newReceipt.id);
+    }).catch(() => {});
 
     return newReceipt;
   },
 
   deleteCustomerReceipt(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('receipts', id);
     const receipts = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, INITIAL_RECEIPTS);
     const customers = this.getCustomers();
     const sales = this.getSales();
@@ -773,7 +841,7 @@ export const StorageService = {
 
     const cleanReceipts = receipts.filter((r) => r.id !== id);
     setItem(STORAGE_KEYS.RECEIPTS, cleanReceipts);
-    SupabaseSyncService.deleteReceipt(id);
+    SupabaseSyncService.deleteReceipt(id).catch(() => {});
   },
 
   // --- SUPPLIER PAYMENTS ---
@@ -836,13 +904,17 @@ export const StorageService = {
 
     payments.unshift(newPayment);
     setItem(STORAGE_KEYS.PAYMENTS, payments);
-    SupabaseSyncService.syncPayment(newPayment);
+    addPendingSyncId('payments', newPayment.id);
+    SupabaseSyncService.syncPayment(newPayment).then((res) => {
+      if (res?.success) removePendingSyncId('payments', newPayment.id);
+    }).catch(() => {});
 
     return newPayment;
   },
 
   deleteSupplierPayment(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('payments', id);
     const payments = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, INITIAL_PAYMENTS);
     const suppliers = this.getSuppliers();
     const purchases = this.getPurchases();
@@ -877,7 +949,7 @@ export const StorageService = {
 
     const cleanPayments = payments.filter((p) => p.id !== id);
     setItem(STORAGE_KEYS.PAYMENTS, cleanPayments);
-    SupabaseSyncService.deletePayment(id);
+    SupabaseSyncService.deletePayment(id).catch(() => {});
   },
 
   // --- EXPENSES ---
@@ -910,17 +982,21 @@ export const StorageService = {
 
     expenses.unshift(newExpense);
     setItem(STORAGE_KEYS.EXPENSES, expenses);
-    SupabaseSyncService.syncExpense(newExpense);
+    addPendingSyncId('expenses', newExpense.id);
+    SupabaseSyncService.syncExpense(newExpense).then((res) => {
+      if (res?.success) removePendingSyncId('expenses', newExpense.id);
+    }).catch(() => {});
 
     return newExpense;
   },
 
   deleteExpense(id: string): void {
     addDeletedId(id);
+    removePendingSyncId('expenses', id);
     const expenses = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
     const cleanExpenses = expenses.filter((e) => e.id !== id);
     setItem(STORAGE_KEYS.EXPENSES, cleanExpenses);
-    SupabaseSyncService.deleteExpense(id);
+    SupabaseSyncService.deleteExpense(id).catch(() => {});
   },
 
   // --- CASH BALANCE & DASHBOARD STATS ---
@@ -1239,6 +1315,27 @@ export const StorageService = {
     setItem(STORAGE_KEYS.EXPENSES, []);
   },
 
+  // --- SYNC & DELETION TRACKING ---
+  getDeletedIds(): Set<string> {
+    return getDeletedIds();
+  },
+
+  addDeletedId(id: string): void {
+    addDeletedId(id);
+  },
+
+  getPendingSyncIds(type: string): Set<string> {
+    return getPendingSyncIds(type);
+  },
+
+  addPendingSyncId(type: string, id: string): void {
+    addPendingSyncId(type, id);
+  },
+
+  removePendingSyncId(type: string, id: string): void {
+    removePendingSyncId(type, id);
+  },
+
   // --- MULTI-DEVICE CLOUD PULL ---
   async pullFromSupabase(companyId?: string): Promise<{ success: boolean; pulledCounts?: Record<string, number>; error?: string }> {
     try {
@@ -1256,6 +1353,36 @@ export const StorageService = {
       ]);
 
       const deletedIds = getDeletedIds();
+
+      // Clean up any remotely returned records that have been deleted locally
+      if (rawSales) {
+        rawSales.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deleteSaleInvoice(r.id).catch(() => {}));
+      }
+      if (rawPurchases) {
+        rawPurchases.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deletePurchaseInvoice(r.id).catch(() => {}));
+      }
+      if (rawProducts) {
+        rawProducts.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deleteProduct(r.id).catch(() => {}));
+      }
+      if (rawCustomers) {
+        rawCustomers.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deleteCustomer(r.id).catch(() => {}));
+      }
+      if (rawSuppliers) {
+        rawSuppliers.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deleteSupplier(r.id).catch(() => {}));
+      }
+      if (rawReceipts) {
+        rawReceipts.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deleteReceipt(r.id).catch(() => {}));
+      }
+      if (rawPayments) {
+        rawPayments.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deletePayment(r.id).catch(() => {}));
+      }
+      if (rawExpenses) {
+        rawExpenses.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deleteExpense(r.id).catch(() => {}));
+      }
+      if (rawUsers) {
+        rawUsers.filter((r) => deletedIds.has(r.id)).forEach((r) => SupabaseSyncService.deleteUser(r.id).catch(() => {}));
+      }
+
       const remoteCompanies = rawCompanies ? rawCompanies.filter((r) => !deletedIds.has(r.id)) : null;
       const remoteProducts = rawProducts ? rawProducts.filter((r) => !deletedIds.has(r.id)) : null;
       const remoteCustomers = rawCustomers ? rawCustomers.filter((r) => !deletedIds.has(r.id)) : null;
@@ -1270,21 +1397,28 @@ export const StorageService = {
       const pulledCounts: Record<string, number> = {};
 
       if (remoteCompanies !== null) {
-        const localComp = getItem<Company[]>(STORAGE_KEYS.COMPANIES, INITIAL_COMPANIES);
+        const localComp = getItem<Company[]>(STORAGE_KEYS.COMPANIES, INITIAL_COMPANIES).filter((c) => !deletedIds.has(c.id));
+        const pendingComp = getPendingSyncIds('companies');
         const mergedCompMap = new Map<string, Company>();
         remoteCompanies.forEach((r) => mergedCompMap.set(r.id, r));
 
         localComp.forEach((loc) => {
           const rem = mergedCompMap.get(loc.id);
           if (!rem) {
-            mergedCompMap.set(loc.id, loc);
-            SupabaseSyncService.syncCompany(loc).catch(() => {});
+            if (pendingComp.has(loc.id)) {
+              mergedCompMap.set(loc.id, loc);
+              SupabaseSyncService.syncCompany(loc).then((res) => {
+                if (res?.success) removePendingSyncId('companies', loc.id);
+              }).catch(() => {});
+            }
           } else {
             const locTime = new Date(loc.updatedAt || 0).getTime();
             const remTime = new Date(rem.updatedAt || 0).getTime();
-            if (locTime > remTime) {
+            if (locTime > remTime && pendingComp.has(loc.id)) {
               mergedCompMap.set(loc.id, loc);
-              SupabaseSyncService.syncCompany(loc).catch(() => {});
+              SupabaseSyncService.syncCompany(loc).then((res) => {
+                if (res?.success) removePendingSyncId('companies', loc.id);
+              }).catch(() => {});
             }
           }
         });
@@ -1295,25 +1429,25 @@ export const StorageService = {
       }
 
       if (remoteProducts !== null) {
-        const local = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+        const local = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, []).filter((p) => !deletedIds.has(p.id));
+        const pendingProducts = getPendingSyncIds('products');
         const targetComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
-        // Map remote products by ID and Code
         const remoteMap = new Map<string, Product>();
         remoteProducts.forEach((r) => {
           remoteMap.set(r.id, r);
           if (r.code) remoteMap.set(`code:${r.code.toLowerCase().trim()}`, r);
         });
 
-        // Merge: keep remote products, plus any local products created/imported locally that aren't in remote yet
         const mergedCompProducts: Product[] = [...remoteProducts];
         targetComp.forEach((loc) => {
           const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
-          if (!isRemotePresent) {
+          if (!isRemotePresent && pendingProducts.has(loc.id)) {
             mergedCompProducts.push(loc);
-            // Background sync unsynced local product to Supabase
-            SupabaseSyncService.syncProduct(loc).catch(() => {});
+            SupabaseSyncService.syncProduct(loc).then((res) => {
+              if (res?.success) removePendingSyncId('products', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1322,7 +1456,8 @@ export const StorageService = {
       }
 
       if (remoteCustomers !== null) {
-        const local = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+        const local = getItem<Customer[]>(STORAGE_KEYS.CUSTOMERS, []).filter((c) => !deletedIds.has(c.id));
+        const pendingCustomers = getPendingSyncIds('customers');
         const targetComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
@@ -1335,9 +1470,11 @@ export const StorageService = {
         const mergedCompCustomers: Customer[] = [...remoteCustomers];
         targetComp.forEach((loc) => {
           const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
-          if (!isRemotePresent) {
+          if (!isRemotePresent && pendingCustomers.has(loc.id)) {
             mergedCompCustomers.push(loc);
-            SupabaseSyncService.syncCustomer(loc).catch(() => {});
+            SupabaseSyncService.syncCustomer(loc).then((res) => {
+              if (res?.success) removePendingSyncId('customers', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1346,7 +1483,8 @@ export const StorageService = {
       }
 
       if (remoteSuppliers !== null) {
-        const local = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+        const local = getItem<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []).filter((s) => !deletedIds.has(s.id));
+        const pendingSuppliers = getPendingSyncIds('suppliers');
         const targetComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
@@ -1359,9 +1497,11 @@ export const StorageService = {
         const mergedCompSuppliers: Supplier[] = [...remoteSuppliers];
         targetComp.forEach((loc) => {
           const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
-          if (!isRemotePresent) {
+          if (!isRemotePresent && pendingSuppliers.has(loc.id)) {
             mergedCompSuppliers.push(loc);
-            SupabaseSyncService.syncSupplier(loc).catch(() => {});
+            SupabaseSyncService.syncSupplier(loc).then((res) => {
+              if (res?.success) removePendingSyncId('suppliers', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1370,16 +1510,19 @@ export const StorageService = {
       }
 
       if (remoteSales !== null) {
-        const local = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, []);
+        const local = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, []).filter((s) => !deletedIds.has(s.id));
+        const pendingSales = getPendingSyncIds('sales');
         const targetComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
         const remoteIds = new Set(remoteSales.map((r) => r.id));
         const mergedCompSales: SaleInvoice[] = [...remoteSales];
         targetComp.forEach((loc) => {
-          if (!remoteIds.has(loc.id)) {
+          if (!remoteIds.has(loc.id) && pendingSales.has(loc.id)) {
             mergedCompSales.push(loc);
-            SupabaseSyncService.syncSaleInvoice(loc).catch(() => {});
+            SupabaseSyncService.syncSaleInvoice(loc).then((res) => {
+              if (res?.success) removePendingSyncId('sales', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1388,16 +1531,19 @@ export const StorageService = {
       }
 
       if (remotePurchases !== null) {
-        const local = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, []);
+        const local = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, []).filter((p) => !deletedIds.has(p.id));
+        const pendingPurchases = getPendingSyncIds('purchases');
         const targetComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
         const remoteIds = new Set(remotePurchases.map((r) => r.id));
         const mergedCompPurchases: PurchaseInvoice[] = [...remotePurchases];
         targetComp.forEach((loc) => {
-          if (!remoteIds.has(loc.id)) {
+          if (!remoteIds.has(loc.id) && pendingPurchases.has(loc.id)) {
             mergedCompPurchases.push(loc);
-            SupabaseSyncService.syncPurchaseInvoice(loc).catch(() => {});
+            SupabaseSyncService.syncPurchaseInvoice(loc).then((res) => {
+              if (res?.success) removePendingSyncId('purchases', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1406,16 +1552,19 @@ export const StorageService = {
       }
 
       if (remoteReceipts !== null) {
-        const local = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, []);
+        const local = getItem<CustomerReceipt[]>(STORAGE_KEYS.RECEIPTS, []).filter((r) => !deletedIds.has(r.id));
+        const pendingReceipts = getPendingSyncIds('receipts');
         const targetComp = companyId ? local.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((r) => (r.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
         const remoteIds = new Set(remoteReceipts.map((r) => r.id));
         const mergedCompReceipts: CustomerReceipt[] = [...remoteReceipts];
         targetComp.forEach((loc) => {
-          if (!remoteIds.has(loc.id)) {
+          if (!remoteIds.has(loc.id) && pendingReceipts.has(loc.id)) {
             mergedCompReceipts.push(loc);
-            SupabaseSyncService.syncReceipt(loc).catch(() => {});
+            SupabaseSyncService.syncReceipt(loc).then((res) => {
+              if (res?.success) removePendingSyncId('receipts', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1424,16 +1573,19 @@ export const StorageService = {
       }
 
       if (remotePayments !== null) {
-        const local = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, []);
+        const local = getItem<SupplierPayment[]>(STORAGE_KEYS.PAYMENTS, []).filter((p) => !deletedIds.has(p.id));
+        const pendingPayments = getPendingSyncIds('payments');
         const targetComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
         const remoteIds = new Set(remotePayments.map((r) => r.id));
         const mergedCompPayments: SupplierPayment[] = [...remotePayments];
         targetComp.forEach((loc) => {
-          if (!remoteIds.has(loc.id)) {
+          if (!remoteIds.has(loc.id) && pendingPayments.has(loc.id)) {
             mergedCompPayments.push(loc);
-            SupabaseSyncService.syncPayment(loc).catch(() => {});
+            SupabaseSyncService.syncPayment(loc).then((res) => {
+              if (res?.success) removePendingSyncId('payments', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1442,16 +1594,19 @@ export const StorageService = {
       }
 
       if (remoteExpenses !== null) {
-        const local = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, []);
+        const local = getItem<Expense[]>(STORAGE_KEYS.EXPENSES, []).filter((e) => !deletedIds.has(e.id));
+        const pendingExpenses = getPendingSyncIds('expenses');
         const targetComp = companyId ? local.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((e) => (e.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
         const remoteIds = new Set(remoteExpenses.map((r) => r.id));
         const mergedCompExpenses: Expense[] = [...remoteExpenses];
         targetComp.forEach((loc) => {
-          if (!remoteIds.has(loc.id)) {
+          if (!remoteIds.has(loc.id) && pendingExpenses.has(loc.id)) {
             mergedCompExpenses.push(loc);
-            SupabaseSyncService.syncExpense(loc).catch(() => {});
+            SupabaseSyncService.syncExpense(loc).then((res) => {
+              if (res?.success) removePendingSyncId('expenses', loc.id);
+            }).catch(() => {});
           }
         });
 
@@ -1460,21 +1615,28 @@ export const StorageService = {
       }
 
       if (remoteUsers !== null) {
-        const localUsers = getItem<AppUser[]>(STORAGE_KEYS.USERS, []);
+        const localUsers = getItem<AppUser[]>(STORAGE_KEYS.USERS, []).filter((u) => !deletedIds.has(u.id));
+        const pendingUsers = getPendingSyncIds('users');
         const mergedUserMap = new Map<string, AppUser>();
         remoteUsers.forEach((r) => mergedUserMap.set(r.id, r));
 
         localUsers.forEach((loc) => {
           const rem = mergedUserMap.get(loc.id);
           if (!rem) {
-            mergedUserMap.set(loc.id, loc);
-            SupabaseSyncService.syncUser(loc).catch(() => {});
+            if (pendingUsers.has(loc.id)) {
+              mergedUserMap.set(loc.id, loc);
+              SupabaseSyncService.syncUser(loc).then((res) => {
+                if (res?.success) removePendingSyncId('users', loc.id);
+              }).catch(() => {});
+            }
           } else {
             const locTime = new Date(loc.updatedAt || 0).getTime();
             const remTime = new Date(rem.updatedAt || 0).getTime();
-            if (locTime > remTime) {
+            if (locTime > remTime && pendingUsers.has(loc.id)) {
               mergedUserMap.set(loc.id, loc);
-              SupabaseSyncService.syncUser(loc).catch(() => {});
+              SupabaseSyncService.syncUser(loc).then((res) => {
+                if (res?.success) removePendingSyncId('users', loc.id);
+              }).catch(() => {});
             }
           }
         });
