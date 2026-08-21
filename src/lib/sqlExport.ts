@@ -95,26 +95,35 @@ CREATE TABLE IF NOT EXISTS app_users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role_name VARCHAR(100);
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS assigned_company_ids JSONB DEFAULT '[]';
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS permission_overrides JSONB DEFAULT '{}';
-ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_id_fkey;
+-- 2. Add any newly introduced columns and convert id type from UUID to VARCHAR(100) if table pre-existed
+ALTER TABLE IF EXISTS user_company_assignments DROP CONSTRAINT IF EXISTS user_company_assignments_user_id_fkey;
+ALTER TABLE IF EXISTS user_permissions DROP CONSTRAINT IF EXISTS user_permissions_user_id_fkey;
+ALTER TABLE IF EXISTS audit_logs DROP CONSTRAINT IF EXISTS audit_logs_user_id_fkey;
+
+ALTER TABLE IF EXISTS app_users ALTER COLUMN id TYPE VARCHAR(100) USING id::text;
+ALTER TABLE IF EXISTS app_users ADD COLUMN IF NOT EXISTS role_name VARCHAR(100);
+ALTER TABLE IF EXISTS app_users ADD COLUMN IF NOT EXISTS assigned_company_ids JSONB DEFAULT '[]';
+ALTER TABLE IF EXISTS app_users ADD COLUMN IF NOT EXISTS permission_overrides JSONB DEFAULT '{}';
+ALTER TABLE IF EXISTS app_users DROP CONSTRAINT IF EXISTS app_users_role_id_fkey;
 
 CREATE TABLE IF NOT EXISTS user_company_assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id VARCHAR(100) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    user_id VARCHAR(100) NOT NULL,
     company_id VARCHAR(50) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    role_id VARCHAR(50) NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
+    role_id VARCHAR(50) NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     CONSTRAINT unique_user_company UNIQUE (user_id, company_id)
 );
+ALTER TABLE IF EXISTS user_company_assignments ALTER COLUMN user_id TYPE VARCHAR(100) USING user_id::text;
+ALTER TABLE IF EXISTS user_company_assignments DROP CONSTRAINT IF EXISTS user_company_assignments_role_id_fkey;
 
 CREATE TABLE IF NOT EXISTS user_permissions (
-    user_id VARCHAR(100) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
-    permission_id VARCHAR(50) NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    user_id VARCHAR(100) NOT NULL,
+    permission_id VARCHAR(50) NOT NULL,
     allowed BOOLEAN NOT NULL DEFAULT TRUE,
     PRIMARY KEY (user_id, permission_id)
 );
+ALTER TABLE IF EXISTS user_permissions ALTER COLUMN user_id TYPE VARCHAR(100) USING user_id::text;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
