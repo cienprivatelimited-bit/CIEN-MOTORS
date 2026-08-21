@@ -9,7 +9,7 @@ import {
   Company
 } from '../types';
 import { SYSTEM_ROLES, calculateEffectivePermissions, checkPermission } from './permissions';
-import { generateSalt, hashPassword, verifyPassword } from './crypto';
+import { generateSalt, generateUUID, hashPassword, verifyPassword } from './crypto';
 import { StorageService } from './storage';
 import { SupabaseSyncService } from './supabase';
 
@@ -257,7 +257,7 @@ export const AuthService = {
     const now = new Date().toISOString();
 
     const newUser: AppUser = {
-      id: `user-${Date.now()}-${generateSalt(4)}`,
+      id: generateUUID(),
       username: cleanUsername,
       usernameNormalized: normalized,
       fullName: data.fullName.trim() || cleanUsername,

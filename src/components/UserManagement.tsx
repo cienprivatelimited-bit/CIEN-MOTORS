@@ -19,7 +19,9 @@ import {
   Sliders,
   History,
   RotateCcw,
-  Plus
+  Plus,
+  CloudUpload,
+  RefreshCw
 } from 'lucide-react';
 import { AppUser, Role, PermissionKey, PermissionModule, AuditLog } from '../types';
 import { AuthService } from '../lib/auth';
@@ -79,6 +81,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Audit Logs Filter
   const [auditSearch, setAuditSearch] = useState<string>('');
   const [auditModuleFilter, setAuditModuleFilter] = useState<string>('ALL');
+  const [isSyncingUsers, setIsSyncingUsers] = useState<boolean>(false);
 
   const reloadData = () => {
     const updatedUsers = AuthService.getUsers();
@@ -95,6 +98,31 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   useEffect(() => {
     reloadData();
   }, []);
+
+  const handleSyncAllUsersToSupabase = async () => {
+    setIsSyncingUsers(true);
+    const allUsers = AuthService.getUsers();
+    let successCount = 0;
+    let lastError: string | undefined = undefined;
+
+    for (const u of allUsers) {
+      const res = await SupabaseSyncService.syncUser(u);
+      if (res.success) {
+        successCount++;
+      } else {
+        lastError = res.error;
+      }
+    }
+
+    setIsSyncingUsers(false);
+    if (successCount === allUsers.length) {
+      showToast('success', `All ${successCount} user accounts synced successfully to Supabase!`);
+    } else if (successCount > 0) {
+      showToast('warning', `Synced ${successCount}/${allUsers.length} users. Error: ${lastError}`);
+    } else {
+      showToast('error', `Supabase user sync failed: ${lastError || 'Please check Supabase configuration in Settings'}`);
+    }
+  };
 
   // --- USER CRUD HANDLERS ---
   const handleOpenCreateUser = () => {
@@ -127,7 +155,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
       const syncResult = await SupabaseSyncService.syncUser(created);
       if (syncResult.error) {
-        showToast('warning', `User "${created.username}" created locally, but Supabase sync returned: ${syncResult.error}`);
+        showToast('warning', `User "${created.username}" created locally. Supabase: ${syncResult.error}`);
       } else {
         showToast('success', `User account "${created.username}" created and saved to Supabase!`);
       }
@@ -140,18 +168,24 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
-  const handleSaveEditUser = (e: React.FormEvent) => {
+  const handleSaveEditUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
 
     try {
-      AuthService.updateUser(editingUser.id, {
+      const updated = AuthService.updateUser(editingUser.id, {
         fullName: editingUser.fullName,
         roleId: editingUser.roleId,
         isActive: editingUser.isActive
       });
 
-      showToast('success', `User "${editingUser.username}" profile updated.`);
+      const syncResult = await SupabaseSyncService.syncUser(updated);
+      if (syncResult.error) {
+        showToast('warning', `User "${editingUser.username}" profile updated locally. Supabase: ${syncResult.error}`);
+      } else {
+        showToast('success', `User "${editingUser.username}" profile updated and synced with Supabase.`);
+      }
+
       setEditingUser(null);
       reloadData();
       if (onRefreshPermissions) onRefreshPermissions();
@@ -161,11 +195,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
-  const handleToggleUserActive = (user: AppUser) => {
+  const handleToggleUserActive = async (user: AppUser) => {
     try {
       const updated = AuthService.updateUser(user.id, {
         isActive: !user.isActive
       });
+      await SupabaseSyncService.syncUser(updated);
       showToast(
         updated.isActive ? 'success' : 'info',
         `User "${user.username}" is now ${updated.isActive ? 'Active' : 'Disabled'}.`
@@ -178,7 +213,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
-  const handleDeleteUser = (user: AppUser) => {
+  const handleDeleteUser = async (user: AppUser) => {
     if (user.id === currentUserId) {
       showToast('error', 'You cannot delete your own logged-in account.');
       return;
@@ -187,7 +222,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     if (window.confirm(`Are you sure you want to delete user "${user.username}"?`)) {
       try {
         AuthService.deleteUser(user.id);
-        showToast('info', `User "${user.username}" deleted.`);
+        await SupabaseSyncService.deleteUser(user.id);
+        showToast('info', `User "${user.username}" deleted from local database and Supabase.`);
         reloadData();
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Cannot delete user.';
@@ -207,7 +243,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
     try {
       await AuthService.resetPassword(resetPasswordUser.id, newResetPassword);
-      showToast('success', `Password for user "${resetPasswordUser.username}" has been reset.`);
+      const refreshedUser = AuthService.getUserById(resetPasswordUser.id);
+      if (refreshedUser) {
+        await SupabaseSyncService.syncUser(refreshedUser);
+      }
+      showToast('success', `Password for user "${resetPasswordUser.username}" has been reset and saved to Supabase.`);
       setResetPasswordUser(null);
       setNewResetPassword('');
       setConfirmResetPassword('');
@@ -451,13 +491,26 @@ export const UserManagement: React.FC<UserManagementProps> = ({
               />
             </div>
 
-            <button
-              onClick={handleOpenCreateUser}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-xs transition-all cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4 text-yellow-300" />
-              <span>+ New User</span>
-            </button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={handleSyncAllUsersToSupabase}
+                disabled={isSyncingUsers}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 font-bold px-3.5 py-2 rounded-xl text-xs shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                title="Synchronize all user accounts to Supabase database"
+              >
+                <CloudUpload className={`w-4 h-4 ${isSyncingUsers ? 'animate-bounce text-emerald-600' : 'text-emerald-600'}`} />
+                <span>{isSyncingUsers ? 'Syncing...' : 'Sync to Supabase'}</span>
+              </button>
+
+              <button
+                onClick={handleOpenCreateUser}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-xs transition-all cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4 text-yellow-300" />
+                <span>+ New User</span>
+              </button>
+            </div>
           </div>
 
           {/* Users Table */}

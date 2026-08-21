@@ -238,9 +238,24 @@ export const SupabaseSyncService = {
   // --- USERS ---
   async syncUser(user: AppUser): Promise<{ success: boolean; error?: string }> {
     const client = getSupabaseClient();
-    if (!client) return { success: false, error: 'Supabase not configured' };
+    if (!client) return { success: false, error: 'Supabase URL or Key is missing. Please configure Supabase in Settings.' };
 
     try {
+      // Ensure role exists in 'roles' table first if role_id is specified
+      if (user.roleId) {
+        try {
+          await client.from('roles').upsert([
+            {
+              id: user.roleId,
+              role_name: user.roleName || user.roleId,
+              description: `Role ${user.roleName || user.roleId}`
+            }
+          ], { onConflict: 'id' });
+        } catch {
+          // Non-blocking if roles table schema differs
+        }
+      }
+
       const payload = {
         id: user.id,
         username: user.username,
@@ -249,7 +264,7 @@ export const SupabaseSyncService = {
         password_hash: user.passwordHash,
         salt: user.salt,
         role_id: user.roleId,
-        role_name: user.roleName,
+        role_name: user.roleName || user.roleId,
         is_active: user.isActive !== undefined ? user.isActive : true,
         assigned_company_ids: user.assignedCompanyIds || [],
         permission_overrides: user.permissionOverrides || {},
@@ -264,12 +279,18 @@ export const SupabaseSyncService = {
 
       if (error) {
         console.warn('Supabase user sync error:', error);
+        if (error.message?.includes('relation "app_users" does not exist') || error.code === '42P01') {
+          return {
+            success: false,
+            error: 'Table "app_users" does not exist in Supabase. Please copy the SQL script from Settings -> Export SQL Schema and run it in your Supabase SQL Editor.'
+          };
+        }
         return { success: false, error: error.message };
       }
       return { success: true };
     } catch (e: any) {
       console.warn('Supabase user sync exception:', e);
-      return { success: false, error: e?.message };
+      return { success: false, error: e?.message || 'Failed to sync user with Supabase' };
     }
   },
 

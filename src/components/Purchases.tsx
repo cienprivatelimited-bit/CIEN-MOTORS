@@ -61,6 +61,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
 
   // Form state
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [customSupplierName, setCustomSupplierName] = useState('Cash Supplier / Spot Purchase');
   const [purchaseType, setPurchaseType] = useState<'CASH' | 'CREDIT'>('CASH');
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
   const [discount, setDiscount] = useState('0');
@@ -90,8 +91,11 @@ export const Purchases: React.FC<PurchasesProps> = ({
     }
   ]);
 
-  const handleSupplierSelect = (id: string) => {
+  const handleSupplierSelect = (id: string, name?: string) => {
     setSelectedSupplierId(id);
+    if (name) {
+      setCustomSupplierName(name);
+    }
     setTimeout(() => {
       const firstProductInput = document.getElementById('purchase-product-search-0') as HTMLInputElement | null;
       if (firstProductInput) {
@@ -240,7 +244,8 @@ export const Purchases: React.FC<PurchasesProps> = ({
   const dueAmount = Math.max(0, grandTotal - finalPaidAmount);
 
   const handleOpenModal = () => {
-    setSelectedSupplierId(suppliers[0]?.id || '');
+    setSelectedSupplierId('');
+    setCustomSupplierName('Cash Supplier / Spot Purchase');
     setPurchaseType('CASH');
     setPurchaseDate(new Date().toISOString().split('T')[0]);
     setDiscount('0');
@@ -263,8 +268,8 @@ export const Purchases: React.FC<PurchasesProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!selectedSupplierId) {
-      showToast('error', 'Please select a supplier.');
+    if (purchaseType === 'CREDIT' && !selectedSupplierId) {
+      showToast('error', 'Please select a registered supplier for credit purchases.');
       return;
     }
 
@@ -273,13 +278,14 @@ export const Purchases: React.FC<PurchasesProps> = ({
       return;
     }
 
-    const supp = suppliers.find((s) => s.id === selectedSupplierId);
+    const supp = selectedSupplierId ? suppliers.find((s) => s.id === selectedSupplierId) : null;
+    const supplierNameToUse = supp ? supp.name : (customSupplierName || 'Cash Supplier / Spot Purchase');
 
     try {
       const newPurchase = onCreatePurchase({
         date: purchaseDate,
-        supplierId: selectedSupplierId,
-        supplierName: supp ? supp.name : 'Vendor',
+        supplierId: selectedSupplierId || undefined,
+        supplierName: supplierNameToUse,
         type: purchaseType,
         items: calculatedItems,
         subtotal: grossSubtotal,
@@ -566,9 +572,11 @@ export const Purchases: React.FC<PurchasesProps> = ({
                   <SearchableSupplierSelect
                     suppliers={suppliers}
                     selectedSupplierId={selectedSupplierId}
+                    customSupplierName={customSupplierName}
                     onSelect={handleSupplierSelect}
                     currencySymbol={settings.currencySymbol}
-                    required={true}
+                    allowSpotSupplier={purchaseType === 'CASH'}
+                    required={purchaseType === 'CREDIT'}
                     label="Supplier Vendor"
                     placeholder="Search vendor by name, company, code..."
                   />

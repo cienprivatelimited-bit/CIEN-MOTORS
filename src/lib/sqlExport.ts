@@ -77,24 +77,32 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 );
 
 CREATE TABLE IF NOT EXISTS app_users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
     username_normalized VARCHAR(100) NOT NULL UNIQUE,
     full_name VARCHAR(150) NOT NULL,
     email VARCHAR(150),
     password_hash TEXT NOT NULL,
     salt TEXT NOT NULL,
-    role_id VARCHAR(50) NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
+    role_id VARCHAR(50) NOT NULL,
+    role_name VARCHAR(100),
     is_active BOOLEAN DEFAULT TRUE,
     is_super_admin BOOLEAN DEFAULT FALSE,
+    assigned_company_ids JSONB DEFAULT '[]',
+    permission_overrides JSONB DEFAULT '{}',
     last_login TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role_name VARCHAR(100);
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS assigned_company_ids JSONB DEFAULT '[]';
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS permission_overrides JSONB DEFAULT '{}';
+ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_id_fkey;
+
 CREATE TABLE IF NOT EXISTS user_company_assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    user_id VARCHAR(100) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
     company_id VARCHAR(50) NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     role_id VARCHAR(50) NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
     is_active BOOLEAN DEFAULT TRUE,
@@ -102,7 +110,7 @@ CREATE TABLE IF NOT EXISTS user_company_assignments (
 );
 
 CREATE TABLE IF NOT EXISTS user_permissions (
-    user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    user_id VARCHAR(100) NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
     permission_id VARCHAR(50) NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
     allowed BOOLEAN NOT NULL DEFAULT TRUE,
     PRIMARY KEY (user_id, permission_id)

@@ -381,8 +381,10 @@ export const SearchableCustomerSelect: React.FC<SearchableCustomerSelectProps> =
 interface SearchableSupplierSelectProps {
   suppliers: Supplier[];
   selectedSupplierId: string;
-  onSelect: (supplierId: string) => void;
+  customSupplierName?: string;
+  onSelect: (supplierId: string, supplierName?: string) => void;
   currencySymbol: string;
+  allowSpotSupplier?: boolean;
   placeholder?: string;
   required?: boolean;
   label?: string;
@@ -393,8 +395,10 @@ interface SearchableSupplierSelectProps {
 export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> = ({
   suppliers,
   selectedSupplierId,
+  customSupplierName,
   onSelect,
   currencySymbol,
+  allowSpotSupplier = true,
   placeholder = 'Type to search supplier name, company, code, phone...',
   required = false,
   label,
@@ -449,15 +453,18 @@ export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> =
     }
   }, [isOpen, filteredSuppliers.length]);
 
+  // Sync displayed text when selected supplier or custom name changes
   useEffect(() => {
     if (!isOpen) {
       if (selectedSupplier) {
         setQuery(selectedSupplier.name);
-      } else {
+      } else if (customSupplierName && customSupplierName !== 'Cash Supplier / Spot Purchase') {
+        setQuery(customSupplierName);
+      } else if (allowSpotSupplier && !selectedSupplierId) {
         setQuery('');
       }
     }
-  }, [selectedSupplierId, selectedSupplier, isOpen]);
+  }, [selectedSupplierId, selectedSupplier, customSupplierName, isOpen, allowSpotSupplier]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -465,6 +472,8 @@ export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> =
         setIsOpen(false);
         if (selectedSupplier) {
           setQuery(selectedSupplier.name);
+        } else if (customSupplierName && customSupplierName !== 'Cash Supplier / Spot Purchase') {
+          setQuery(customSupplierName);
         } else {
           setQuery('');
         }
@@ -472,17 +481,30 @@ export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> =
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedSupplier]);
+  }, [selectedSupplier, customSupplierName]);
 
   const handleSelectSupplier = (supp: Supplier) => {
-    onSelect(supp.id);
+    onSelect(supp.id, supp.name);
     setQuery(supp.name);
+    setIsOpen(false);
+  };
+
+  const handleSelectSpotSupplier = () => {
+    onSelect('', 'Cash Supplier / Spot Purchase');
+    setQuery('');
+    setIsOpen(false);
+  };
+
+  const handleUseCustomSupplierName = (nameToUse: string) => {
+    const clean = nameToUse.trim() || 'Cash Supplier / Spot Purchase';
+    onSelect('', clean);
+    setQuery(clean);
     setIsOpen(false);
   };
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onSelect('');
+    onSelect('', 'Cash Supplier / Spot Purchase');
     setQuery('');
     if (inputRef.current) {
       inputRef.current.focus();
@@ -503,9 +525,14 @@ export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> =
       setHighlightIndex((prev) => Math.max(prev - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (isOpen && filteredSuppliers.length > 0) {
-        const target = highlightIndex >= 0 ? filteredSuppliers[highlightIndex] : filteredSuppliers[0];
-        handleSelectSupplier(target);
+      if (isOpen) {
+        if (highlightIndex >= 0 && highlightIndex < filteredSuppliers.length) {
+          handleSelectSupplier(filteredSuppliers[highlightIndex]);
+        } else if (filteredSuppliers.length > 0) {
+          handleSelectSupplier(filteredSuppliers[0]);
+        } else if (query.trim()) {
+          handleUseCustomSupplierName(query.trim());
+        }
       }
       setTimeout(() => {
         handleEnterKeyNavigation(e);
@@ -610,9 +637,51 @@ export const SearchableSupplierSelect: React.FC<SearchableSupplierSelectProps> =
             dropUp ? 'bottom-full mb-1' : 'top-full mt-1'
           } bg-white rounded-2xl border border-slate-200 shadow-2xl z-[100] max-h-80 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95`}
         >
+          {/* Spot / Cash Supplier option */}
+          {allowSpotSupplier && (
+            <div
+              onClick={handleSelectSpotSupplier}
+              className={`p-3 hover:bg-purple-50 cursor-pointer flex items-center justify-between transition-colors ${
+                !selectedSupplierId && (!customSupplierName || customSupplierName === 'Cash Supplier / Spot Purchase')
+                  ? 'bg-purple-50/80 font-bold'
+                  : ''
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                  <Truck className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-xs sm:text-sm text-slate-900">Cash Supplier / Spot Purchase</span>
+                  <p className="text-[11px] text-slate-400">Immediate cash purchase without ledger account</p>
+                </div>
+              </div>
+              {!selectedSupplierId && (!customSupplierName || customSupplierName === 'Cash Supplier / Spot Purchase') && (
+                <Check className="w-4 h-4 text-purple-600" />
+              )}
+            </div>
+          )}
+
+          {/* If user typed a custom supplier name that does not match exact master */}
+          {query.trim() && (
+            <div
+              onClick={() => handleUseCustomSupplierName(query)}
+              className="p-2.5 bg-purple-50/60 hover:bg-purple-100/80 cursor-pointer flex items-center justify-between text-purple-700 font-bold text-xs border-y border-purple-100 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <Plus className="w-4 h-4" />
+                <span>Use "{query.trim()}" as Supplier Name</span>
+              </span>
+              <span className="text-[11px] font-normal text-purple-600">Press Enter ↵</span>
+            </div>
+          )}
+
           {filteredSuppliers.length === 0 ? (
-            <div className="p-4 text-center text-xs text-slate-400 italic">
-              No matching suppliers found for "{query}".
+            <div className="p-4 text-center text-xs text-slate-400">
+              <p className="font-semibold text-slate-600 mb-1">No registered supplier matches "{query}"</p>
+              <p className="text-[11px] text-slate-400">
+                You can still type the name above to record as spot cash purchase, or add them in Suppliers.
+              </p>
             </div>
           ) : (
             filteredSuppliers.map((supp, idx) => {

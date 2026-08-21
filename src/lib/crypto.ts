@@ -18,6 +18,17 @@ export function generateSalt(length = 16): string {
   return result;
 }
 
+export function generateUUID(): string {
+  if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export async function hashPassword(password: string, salt: string): Promise<string> {
   const combined = `${salt}:${password}:BUSY_UFO_SECURE_AUTH_v1`;
   const encoder = new TextEncoder();
