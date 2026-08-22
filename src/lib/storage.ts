@@ -118,18 +118,20 @@ function getItem<T>(key: string, defaultValue: T): T {
 
 const syncBroadcastChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ufo_cross_tab_sync') : null;
 
-function setItem<T>(key: string, value: T): void {
+function setItem<T>(key: string, value: T, silent = false): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-    if (syncBroadcastChannel) {
-      try {
-        syncBroadcastChannel.postMessage({ key, timestamp: Date.now() });
-      } catch {
-        // Ignore BroadcastChannel errors in restricted contexts
+    if (!silent) {
+      if (syncBroadcastChannel) {
+        try {
+          syncBroadcastChannel.postMessage({ key, timestamp: Date.now() });
+        } catch {
+          // Ignore BroadcastChannel errors in restricted contexts
+        }
       }
-    }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('ufo_local_storage_change', { detail: { key } }));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ufo_local_storage_change', { detail: { key } }));
+      }
     }
   } catch (e) {
     console.error(`Error saving key ${key}:`, e);
@@ -1872,6 +1874,10 @@ export const StorageService = {
 
   // --- MULTI-DEVICE CLOUD PULL ---
   async pullFromSupabase(companyId?: string): Promise<{ success: boolean; pulledCounts?: Record<string, number>; error?: string }> {
+    if ((this as any)._isPulling) {
+      return { success: false, error: 'Pull already in progress' };
+    }
+    (this as any)._isPulling = true;
     try {
       const [rawCompanies, rawProducts, rawCustomers, rawSuppliers, rawSales, rawPurchases, rawReceipts, rawPayments, rawExpenses, rawUsers] = await Promise.all([
         SupabaseSyncService.fetchAllRemoteCompanies(),
@@ -1958,7 +1964,7 @@ export const StorageService = {
         });
 
         const mergedComp = Array.from(mergedCompMap.values());
-        setItem(STORAGE_KEYS.COMPANIES, mergedComp);
+        setItem(STORAGE_KEYS.COMPANIES, mergedComp, true);
         pulledCounts.companies = mergedComp.length;
       }
 
@@ -1993,7 +1999,7 @@ export const StorageService = {
         });
 
         const mergedCompProducts = Array.from(mergedMap.values());
-        setItem(STORAGE_KEYS.PRODUCTS, [...mergedCompProducts, ...otherComp]);
+        setItem(STORAGE_KEYS.PRODUCTS, [...mergedCompProducts, ...otherComp], true);
         pulledCounts.products = mergedCompProducts.length;
       }
 
@@ -2028,7 +2034,7 @@ export const StorageService = {
         });
 
         const mergedCompCustomers = Array.from(mergedMap.values());
-        setItem(STORAGE_KEYS.CUSTOMERS, [...mergedCompCustomers, ...otherComp]);
+        setItem(STORAGE_KEYS.CUSTOMERS, [...mergedCompCustomers, ...otherComp], true);
         pulledCounts.customers = mergedCompCustomers.length;
       }
 
@@ -2063,7 +2069,7 @@ export const StorageService = {
         });
 
         const mergedCompSuppliers = Array.from(mergedMap.values());
-        setItem(STORAGE_KEYS.SUPPLIERS, [...mergedCompSuppliers, ...otherComp]);
+        setItem(STORAGE_KEYS.SUPPLIERS, [...mergedCompSuppliers, ...otherComp], true);
         pulledCounts.suppliers = mergedCompSuppliers.length;
       }
 
@@ -2084,7 +2090,7 @@ export const StorageService = {
           }
         });
 
-        setItem(STORAGE_KEYS.SALES, [...mergedCompSales, ...otherComp]);
+        setItem(STORAGE_KEYS.SALES, [...mergedCompSales, ...otherComp], true);
         pulledCounts.sales = mergedCompSales.length;
       }
 
@@ -2105,7 +2111,7 @@ export const StorageService = {
           }
         });
 
-        setItem(STORAGE_KEYS.PURCHASES, [...mergedCompPurchases, ...otherComp]);
+        setItem(STORAGE_KEYS.PURCHASES, [...mergedCompPurchases, ...otherComp], true);
         pulledCounts.purchases = mergedCompPurchases.length;
       }
 
@@ -2126,7 +2132,7 @@ export const StorageService = {
           }
         });
 
-        setItem(STORAGE_KEYS.RECEIPTS, [...mergedCompReceipts, ...otherComp]);
+        setItem(STORAGE_KEYS.RECEIPTS, [...mergedCompReceipts, ...otherComp], true);
         pulledCounts.receipts = mergedCompReceipts.length;
       }
 
@@ -2147,7 +2153,7 @@ export const StorageService = {
           }
         });
 
-        setItem(STORAGE_KEYS.PAYMENTS, [...mergedCompPayments, ...otherComp]);
+        setItem(STORAGE_KEYS.PAYMENTS, [...mergedCompPayments, ...otherComp], true);
         pulledCounts.payments = mergedCompPayments.length;
       }
 
@@ -2168,7 +2174,7 @@ export const StorageService = {
           }
         });
 
-        setItem(STORAGE_KEYS.EXPENSES, [...mergedCompExpenses, ...otherComp]);
+        setItem(STORAGE_KEYS.EXPENSES, [...mergedCompExpenses, ...otherComp], true);
         pulledCounts.expenses = mergedCompExpenses.length;
       }
 
@@ -2200,7 +2206,7 @@ export const StorageService = {
         });
 
         const mergedUsers = Array.from(mergedUserMap.values());
-        setItem(STORAGE_KEYS.USERS, mergedUsers);
+        setItem(STORAGE_KEYS.USERS, mergedUsers, true);
         pulledCounts.users = mergedUsers.length;
       }
 
@@ -2208,6 +2214,8 @@ export const StorageService = {
     } catch (err: any) {
       console.error('Error pulling from Supabase:', err);
       return { success: false, error: err?.message };
+    } finally {
+      (this as any)._isPulling = false;
     }
   }
 };

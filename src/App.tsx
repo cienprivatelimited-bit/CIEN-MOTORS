@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -168,13 +168,22 @@ export default function App() {
   };
 
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const isPullingRef = useRef(false);
+  const lastPullTimeRef = useRef(0);
 
-  const performCloudPull = async (compId?: string, showToastNotice = false) => {
+  const performCloudPull = async (compId?: string, showToastNotice = false, force = false) => {
     const activeCompId = compId || session?.company?.id;
     const creds = getActiveSupabaseCredentials();
     if (!creds.url || !creds.key) return;
 
+    const now = Date.now();
+    if (isPullingRef.current) return;
+    if (!force && now - lastPullTimeRef.current < 8000) return;
+
+    isPullingRef.current = true;
+    lastPullTimeRef.current = now;
     setIsSyncingCloud(true);
+
     try {
       const res = await StorageService.pullFromSupabase(activeCompId);
       if (res.success) {
@@ -191,6 +200,7 @@ export default function App() {
     } catch (e) {
       console.warn('Cloud sync error:', e);
     } finally {
+      isPullingRef.current = false;
       setIsSyncingCloud(false);
     }
   };
@@ -203,24 +213,28 @@ export default function App() {
     if (session?.company?.id) {
       refreshAllStates(session.company.id);
       // Auto-pull on company load
-      performCloudPull(session.company.id, false);
+      performCloudPull(session.company.id, false, true);
     }
   }, [session?.company?.id]);
 
   // Real-time multi-device cloud listener & cross-tab local live sync
   useEffect(() => {
-    // 1. Supabase Realtime WebSocket Subscription
+    // 1. Supabase Realtime WebSocket Subscription (Debounced to prevent cascades)
+    let realtimeDebounceTimer: any = null;
     const unsubscribeSupabase = SupabaseSyncService.subscribeToRemoteChanges((table, eventType) => {
       console.log(`[Supabase Realtime] ${eventType} on ${table}`);
       if (session?.company?.id) {
-        performCloudPull(session.company.id, false);
+        if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+        realtimeDebounceTimer = setTimeout(() => {
+          performCloudPull(session.company.id, false, false);
+        }, 2000);
       }
     });
 
     // 2. Cross-Tab & Same-Tab Local Storage Change Listeners (Debounced)
     let refreshTimeout: any = null;
     const handleLocalRefresh = (e?: any) => {
-      // Ignore pending sync or deleted ids internal updates
+      // Ignore internal sync flags
       if (e?.detail?.key === 'busy_ufo_pending_sync' || e?.detail?.key === 'busy_ufo_deleted_ids') {
         return;
       }
@@ -229,7 +243,7 @@ export default function App() {
         if (session?.company?.id) {
           refreshAllStates(session.company.id);
         }
-      }, 50);
+      }, 100);
     };
 
     const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ufo_cross_tab_sync') : null;
@@ -243,24 +257,26 @@ export default function App() {
     // 3. Tab Visibility & Focus Pull
     const handleFocusOrVisible = () => {
       if (document.visibilityState === 'visible' && session?.company?.id) {
-        performCloudPull(session.company.id, false);
+        performCloudPull(session.company.id, false, false);
       }
     };
 
     window.addEventListener('visibilitychange', handleFocusOrVisible);
     window.addEventListener('focus', handleFocusOrVisible);
 
-    // 4. Background High-Frequency Auto-Sync Interval (Every 5 seconds for live multi-device updates)
+    // 4. Background Auto-Sync Interval (Periodic background refresh every 30 seconds)
     const syncInterval = setInterval(() => {
       if (document.visibilityState === 'visible' && session?.company?.id) {
         const creds = getActiveSupabaseCredentials();
         if (creds.url && creds.key) {
-          performCloudPull(session.company.id, false);
+          performCloudPull(session.company.id, false, false);
         }
       }
-    }, 5000);
+    }, 30000);
 
     return () => {
+      if (realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+      if (refreshTimeout) clearTimeout(refreshTimeout);
       unsubscribeSupabase();
       if (bc) bc.close();
       window.removeEventListener('storage', handleLocalRefresh);
