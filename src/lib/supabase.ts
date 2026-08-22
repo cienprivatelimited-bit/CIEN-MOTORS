@@ -974,7 +974,8 @@ export const SupabaseSyncService = {
         valueDifference: row.value_difference !== null && row.value_difference !== undefined ? Number(row.value_difference) : undefined,
         importSource: row.import_source || undefined,
         importBatchId: row.import_batch_id || undefined,
-        createdAt: row.created_at || new Date().toISOString()
+        createdAt: row.created_at || new Date().toISOString(),
+        updatedAt: row.updated_at || row.updatedAt || row.created_at || new Date().toISOString()
       }));
     } catch (e) {
       console.error('Error fetching products from Supabase:', e);
@@ -1006,7 +1007,8 @@ export const SupabaseSyncService = {
         city: row.city || 'Colombo',
         openingBalance: Number(row.opening_balance || 0),
         outstandingBalance: Number(row.current_balance || 0),
-        createdAt: row.created_at || new Date().toISOString()
+        createdAt: row.created_at || new Date().toISOString(),
+        updatedAt: row.updated_at || row.updatedAt || row.created_at || new Date().toISOString()
       }));
     } catch (e) {
       console.error('Error fetching customers from Supabase:', e);
@@ -1038,7 +1040,8 @@ export const SupabaseSyncService = {
         city: row.city || 'Colombo',
         openingBalance: Number(row.opening_balance || 0),
         payableBalance: Number(row.current_balance || 0),
-        createdAt: row.created_at || new Date().toISOString()
+        createdAt: row.created_at || new Date().toISOString(),
+        updatedAt: row.updated_at || row.updatedAt || row.created_at || new Date().toISOString()
       }));
     } catch (e) {
       console.error('Error fetching suppliers from Supabase:', e);
@@ -1099,7 +1102,8 @@ export const SupabaseSyncService = {
         paidAmount: Number(row.paid_amount || 0),
         dueAmount: Number(row.due_amount || 0),
         notes: row.notes || '',
-        createdAt: row.created_at || new Date().toISOString()
+        createdAt: row.created_at || new Date().toISOString(),
+        updatedAt: row.updated_at || row.updatedAt || row.created_at || new Date().toISOString()
       }));
     } catch (e) {
       console.error('Error fetching sales from Supabase:', e);
@@ -1159,7 +1163,8 @@ export const SupabaseSyncService = {
         paidAmount: Number(row.paid_amount || 0),
         dueAmount: Number(row.due_amount || 0),
         notes: row.notes || '',
-        createdAt: row.created_at || new Date().toISOString()
+        createdAt: row.created_at || new Date().toISOString(),
+        updatedAt: row.updated_at || row.updatedAt || row.created_at || new Date().toISOString()
       }));
     } catch (e) {
       console.error('Error fetching purchases from Supabase:', e);

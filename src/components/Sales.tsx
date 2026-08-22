@@ -6,6 +6,7 @@ import {
   Printer,
   X,
   Trash2,
+  Edit,
   CheckCircle2,
   User,
   AlertTriangle,
@@ -27,6 +28,7 @@ import { checkPermission } from '../lib/permissions';
 import { shareInvoiceViaWhatsApp } from '../lib/whatsapp';
 import { SearchableCustomerSelect, SearchableProductSelect } from './SearchableSelect';
 import { handleEnterKeyNavigation } from '../lib/keyboardNav';
+import { WhatsAppMessageModal } from './WhatsAppMessageModal';
 
 interface SalesProps {
   sales: SaleInvoice[];
@@ -35,6 +37,7 @@ interface SalesProps {
   settings: AppSettings;
   activeCompany?: Company;
   onCreateInvoice: (invoice: Omit<SaleInvoice, 'id' | 'invoiceNumber' | 'createdAt'>) => SaleInvoice;
+  onUpdateInvoice?: (id: string, invoice: Partial<SaleInvoice>) => SaleInvoice;
   onDeleteInvoice?: (id: string) => void;
   onPrintInvoice: (invoice: SaleInvoice) => void;
   showToast: (type: 'success' | 'error' | 'info', message: string) => void;
@@ -48,6 +51,7 @@ export const Sales: React.FC<SalesProps> = ({
   settings,
   activeCompany,
   onCreateInvoice,
+  onUpdateInvoice,
   onDeleteInvoice,
   onPrintInvoice,
   showToast,
@@ -55,9 +59,32 @@ export const Sales: React.FC<SalesProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<SaleInvoice | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [whatsAppModalData, setWhatsAppModalData] = useState<{
+    isOpen: boolean;
+    sale: SaleInvoice | null;
+    phone: string;
+    recipientName: string;
+  }>({
+    isOpen: false,
+    sale: null,
+    phone: '',
+    recipientName: ''
+  });
+
+  const handleOpenWhatsAppModal = (s: SaleInvoice) => {
+    const cust = customers.find((c) => c.id === s.customerId);
+    setWhatsAppModalData({
+      isOpen: true,
+      sale: s,
+      phone: cust?.phone || '',
+      recipientName: s.customerName || 'Customer'
+    });
+  };
 
   const canAdd = checkPermission(session?.effectivePermissions, 'sales', 'add');
+  const canEdit = checkPermission(session?.effectivePermissions, 'sales', 'edit');
   const canDelete = checkPermission(session?.effectivePermissions, 'sales', 'delete');
   const canPrint = checkPermission(session?.effectivePermissions, 'sales', 'print');
 
@@ -253,6 +280,7 @@ export const Sales: React.FC<SalesProps> = ({
   const dueAmount = Math.max(0, grandTotal - finalPaidAmount);
 
   const handleOpenModal = () => {
+    setEditingInvoice(null);
     setSelectedCustomerId('');
     setCustomCustomerName('Walk-in Cash Customer');
     setInvoiceType('CASH');
@@ -268,9 +296,55 @@ export const Sales: React.FC<SalesProps> = ({
         quantity: '1',
         unitPrice: '0',
         discount: '0',
-        discountType: 'PERCENT'
+        discountType: defaultDiscountType
       }
     ]);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (inv: SaleInvoice) => {
+    setEditingInvoice(inv);
+    setSelectedCustomerId(inv.customerId || '');
+    setCustomCustomerName(inv.customerName || 'Walk-in Cash Customer');
+    setInvoiceType(inv.type || 'CASH');
+    setInvoiceDate(inv.date || new Date().toISOString().split('T')[0]);
+
+    // Calculate extra discount (total discount minus item discounts)
+    const itemDiscSum = (inv.items || []).reduce((sum, it) => {
+      const gross = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+      return sum + Math.max(0, gross - (Number(it.total) || 0));
+    }, 0);
+    const extraDisc = Math.max(0, (Number(inv.discount) || 0) - itemDiscSum);
+    setDiscount(extraDisc > 0 ? String(extraDisc) : '0');
+
+    setPaidAmountInput(String(inv.paidAmount || 0));
+    setNotes(inv.notes || '');
+
+    if (inv.items && inv.items.length > 0) {
+      setLineItems(
+        inv.items.map((item) => ({
+          productId: item.productId || '',
+          productCode: item.productCode || '',
+          productName: item.productName || '',
+          quantity: String(item.quantity || 1),
+          unitPrice: String(item.unitPrice || 0),
+          discount: String(item.discount || 0),
+          discountType: (item.discountType || defaultDiscountType) as 'PERCENT' | 'FIXED'
+        }))
+      );
+    } else {
+      setLineItems([
+        {
+          productId: '',
+          productCode: '',
+          productName: '',
+          quantity: '1',
+          unitPrice: '0',
+          discount: '0',
+          discountType: defaultDiscountType
+        }
+      ]);
+    }
     setIsModalOpen(true);
   };
 
@@ -282,43 +356,75 @@ export const Sales: React.FC<SalesProps> = ({
       return;
     }
 
-    // Negative stock check if disallowed
+    // Negative stock check if disallowed (accounting for editing existing invoice)
     if (!settings.allowNegativeStock) {
       for (const item of calculatedItems) {
         const prod = products.find((p) => p.id === item.productId);
-        if (prod && prod.currentStock < item.quantity) {
-          showToast(
-            'error',
-            `Cannot sell ${item.quantity} of "${prod.name}". Available stock is only ${prod.currentStock}.`
-          );
-          return;
+        if (prod) {
+          let effectiveStock = prod.currentStock;
+          if (editingInvoice) {
+            const oldItem = editingInvoice.items.find((oi) => oi.productId === item.productId || oi.productCode === item.productCode);
+            if (oldItem) {
+              effectiveStock += Number(oldItem.quantity || 0);
+            }
+          }
+          if (effectiveStock < item.quantity) {
+            showToast(
+              'error',
+              `Cannot sell ${item.quantity} of "${prod.name}". Available stock is only ${effectiveStock}.`
+            );
+            return;
+          }
         }
       }
     }
 
     try {
-      const newInvoice = onCreateInvoice({
-        date: invoiceDate,
-        customerId: selectedCustomerId || undefined,
-        customerName: customCustomerName,
-        type: invoiceType,
-        items: calculatedItems,
-        subtotal: grossSubtotal,
-        discount: totalDiscount,
-        grandTotal,
-        paidAmount: finalPaidAmount,
-        dueAmount,
-        notes
-      });
+      if (editingInvoice && onUpdateInvoice) {
+        const updated = onUpdateInvoice(editingInvoice.id, {
+          date: invoiceDate,
+          customerId: selectedCustomerId || undefined,
+          customerName: customCustomerName,
+          type: invoiceType,
+          items: calculatedItems,
+          subtotal: grossSubtotal,
+          discount: totalDiscount,
+          grandTotal,
+          paidAmount: finalPaidAmount,
+          dueAmount,
+          notes
+        });
 
-      showToast(
-        'success',
-        `Invoice ${newInvoice.invoiceNumber} created! Stock updated automatically.`
-      );
-      setIsModalOpen(false);
-      onPrintInvoice(newInvoice);
+        showToast(
+          'success',
+          `Invoice ${updated.invoiceNumber} modified successfully! Inventory stock and customer ledger updated.`
+        );
+        setIsModalOpen(false);
+        setEditingInvoice(null);
+      } else {
+        const newInvoice = onCreateInvoice({
+          date: invoiceDate,
+          customerId: selectedCustomerId || undefined,
+          customerName: customCustomerName,
+          type: invoiceType,
+          items: calculatedItems,
+          subtotal: grossSubtotal,
+          discount: totalDiscount,
+          grandTotal,
+          paidAmount: finalPaidAmount,
+          dueAmount,
+          notes
+        });
+
+        showToast(
+          'success',
+          `Invoice ${newInvoice.invoiceNumber} created! Stock updated automatically.`
+        );
+        setIsModalOpen(false);
+        onPrintInvoice(newInvoice);
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to create invoice';
+      const msg = err instanceof Error ? err.message : 'Failed to save invoice';
       showToast('error', msg);
     }
   };
@@ -422,16 +528,23 @@ export const Sales: React.FC<SalesProps> = ({
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-1.5 ml-auto">
                           <button
-                            onClick={() => {
-                              const cust = customers.find((c) => c.id === s.customerId);
-                              shareInvoiceViaWhatsApp(s, false, settings, cust?.phone);
-                            }}
+                            onClick={() => handleOpenWhatsAppModal(s)}
                             className="p-1.5 hover:bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer flex items-center gap-1 text-xs font-bold"
-                            title="Send via WhatsApp"
+                            title="Modify & Send WhatsApp Message"
                           >
                             <MessageCircle className="w-4 h-4 text-emerald-600 fill-emerald-100" />
                             <span className="hidden md:inline">WhatsApp</span>
                           </button>
+                          {onUpdateInvoice && canEdit && (
+                            <button
+                              onClick={() => handleOpenEditModal(s)}
+                              className="p-1.5 hover:bg-amber-50 text-amber-700 rounded-xl cursor-pointer flex items-center gap-1 text-xs font-bold"
+                              title="Edit Invoice"
+                            >
+                              <Edit className="w-4 h-4 text-amber-600" />
+                              <span className="hidden md:inline">Edit</span>
+                            </button>
+                          )}
                           {canPrint && (
                             <button
                               onClick={() => onPrintInvoice(s)}
@@ -486,16 +599,23 @@ export const Sales: React.FC<SalesProps> = ({
                     </div>
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => {
-                          const cust = customers.find((c) => c.id === s.customerId);
-                          shareInvoiceViaWhatsApp(s, false, settings, cust?.phone);
-                        }}
+                        onClick={() => handleOpenWhatsAppModal(s)}
                         className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
-                        title="Send via WhatsApp"
+                        title="Modify & Send WhatsApp Message"
                       >
                         <MessageCircle className="w-3.5 h-3.5 text-emerald-600 fill-emerald-200" />
                         <span>WhatsApp</span>
                       </button>
+                      {onUpdateInvoice && canEdit && (
+                        <button
+                          onClick={() => handleOpenEditModal(s)}
+                          className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                          title="Edit Invoice"
+                        >
+                          <Edit className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Edit</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => onPrintInvoice(s)}
                         className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
@@ -503,7 +623,7 @@ export const Sales: React.FC<SalesProps> = ({
                         <Printer className="w-3.5 h-3.5" />
                         <span>Print</span>
                       </button>
-                      {onDeleteInvoice && (
+                      {onDeleteInvoice && canDelete && (
                         <button
                           onClick={() => setDeleteConfirmId(s.id)}
                           className="p-1.5 hover:bg-rose-50 text-rose-600 rounded-xl cursor-pointer"
@@ -553,7 +673,7 @@ export const Sales: React.FC<SalesProps> = ({
         </div>
       )}
 
-      {/* Create Invoice Modal - Spacious & Easy-to-use Layout */}
+      {/* Create / Edit Invoice Modal - Spacious & Easy-to-use Layout */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full p-4 sm:p-6 md:p-8 animate-in fade-in zoom-in-95 my-2 sm:my-6 max-h-[95vh] flex flex-col">
@@ -564,9 +684,13 @@ export const Sales: React.FC<SalesProps> = ({
                   <ShoppingCart className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-xl sm:text-2xl text-slate-900">Create New Sales Invoice</h3>
+                  <h3 className="font-bold text-xl sm:text-2xl text-slate-900">
+                    {editingInvoice ? `Edit Sales Invoice (${editingInvoice.invoiceNumber})` : 'Create New Sales Invoice'}
+                  </h3>
                   <p className="text-xs text-slate-500 font-normal">
-                    Add products, apply item-wise discounts, and issue cash or credit invoices with instant stock updates
+                    {editingInvoice
+                      ? 'Modify products, quantities, prices, or payment terms. Stock levels and customer balance will adjust automatically.'
+                      : 'Add products, apply item-wise discounts, and issue cash or credit invoices with instant stock updates'}
                   </p>
                 </div>
               </div>
@@ -975,12 +1099,27 @@ export const Sales: React.FC<SalesProps> = ({
                   className="px-6 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
                 >
                   <CheckCircle2 className="w-4 h-4 text-yellow-400" />
-                  <span>Confirm & Save Invoice</span>
+                  <span>{editingInvoice ? 'Update & Save Changes' : 'Confirm & Save Invoice'}</span>
                 </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* WhatsApp Message Customization & Preview Modal */}
+      {whatsAppModalData.isOpen && whatsAppModalData.sale && (
+        <WhatsAppMessageModal
+          isOpen={whatsAppModalData.isOpen}
+          onClose={() => setWhatsAppModalData((prev) => ({ ...prev, isOpen: false }))}
+          title={`Modify WhatsApp Message: ${whatsAppModalData.sale.invoiceNumber}`}
+          recipientName={whatsAppModalData.recipientName}
+          defaultPhone={whatsAppModalData.phone}
+          invoice={whatsAppModalData.sale}
+          isPurchase={false}
+          settings={settings}
+          showToast={showToast}
+        />
       )}
     </div>
   );

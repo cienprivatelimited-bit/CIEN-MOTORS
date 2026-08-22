@@ -380,6 +380,23 @@ export default function App() {
     return newInv;
   };
 
+  const handleUpdateSaleInvoice = (
+    id: string,
+    invoiceData: Partial<SaleInvoice>
+  ) => {
+    const updatedInv = StorageService.updateSaleInvoice(id, invoiceData, activeCompId);
+    refreshAllStates(activeCompId);
+    if (session) {
+      AuthService.recordAuditLog(
+        'SALE_EDITED',
+        'sales',
+        `Modified sale invoice ${updatedInv.invoiceNumber} for ${updatedInv.customerName}`,
+        updatedInv.id
+      );
+    }
+    return updatedInv;
+  };
+
   const handleDeleteSaleInvoice = (id: string) => {
     StorageService.deleteSaleInvoice(id);
     refreshAllStates(activeCompId);
@@ -640,6 +657,7 @@ export default function App() {
               settings={settings}
               activeCompany={activeCompany}
               onCreateInvoice={handleCreateSaleInvoice}
+              onUpdateInvoice={handleUpdateSaleInvoice}
               onDeleteInvoice={handleDeleteSaleInvoice}
               onPrintInvoice={(inv) => setPrintingDoc({ doc: inv, isPurchase: false })}
               showToast={addToast}

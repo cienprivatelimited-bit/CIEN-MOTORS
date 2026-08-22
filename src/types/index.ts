@@ -56,6 +56,7 @@ export interface Customer {
   openingBalanceType?: 'Dr' | 'Cr'; // Dr = Customer owes us, Cr = We owe customer (advance)
   outstandingBalance: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Supplier {
@@ -75,6 +76,7 @@ export interface Supplier {
   openingBalanceType?: 'Dr' | 'Cr'; // Cr = We owe supplier, Dr = Advance to supplier
   payableBalance: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface UnitDefinition {
@@ -120,6 +122,7 @@ export interface Product {
   warehouseId?: string;
   warehouseName?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface SaleItem {
@@ -152,6 +155,7 @@ export interface SaleInvoice {
   paidAmount: number;
   dueAmount: number;
   notes?: string;
+  updatedAt?: string;
   createdAt: string;
 }
 

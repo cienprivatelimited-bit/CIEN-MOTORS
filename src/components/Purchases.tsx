@@ -26,6 +26,7 @@ import { checkPermission } from '../lib/permissions';
 import { shareInvoiceViaWhatsApp } from '../lib/whatsapp';
 import { SearchableSupplierSelect, SearchableProductSelect } from './SearchableSelect';
 import { handleEnterKeyNavigation } from '../lib/keyboardNav';
+import { WhatsAppMessageModal } from './WhatsAppMessageModal';
 
 interface PurchasesProps {
   purchases: PurchaseInvoice[];
@@ -58,6 +59,27 @@ export const Purchases: React.FC<PurchasesProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPurchase, setEditingPurchase] = useState<PurchaseInvoice | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [whatsAppModalData, setWhatsAppModalData] = useState<{
+    isOpen: boolean;
+    purchase: PurchaseInvoice | null;
+    phone: string;
+    recipientName: string;
+  }>({
+    isOpen: false,
+    purchase: null,
+    phone: '',
+    recipientName: ''
+  });
+
+  const handleOpenWhatsAppModal = (p: PurchaseInvoice) => {
+    const supp = suppliers.find((s) => s.id === p.supplierId);
+    setWhatsAppModalData({
+      isOpen: true,
+      purchase: p,
+      phone: supp?.phone || '',
+      recipientName: p.supplierName || 'Supplier'
+    });
+  };
 
   const canAdd = checkPermission(session?.effectivePermissions, 'purchases', 'add');
   const canEdit = checkPermission(session?.effectivePermissions, 'purchases', 'edit');
@@ -492,12 +514,9 @@ export const Purchases: React.FC<PurchasesProps> = ({
                             </button>
                           )}
                           <button
-                            onClick={() => {
-                              const supp = suppliers.find((s) => s.id === p.supplierId);
-                              shareInvoiceViaWhatsApp(p, true, settings, supp?.phone);
-                            }}
+                            onClick={() => handleOpenWhatsAppModal(p)}
                             className="p-1.5 hover:bg-emerald-50 text-emerald-700 rounded-xl cursor-pointer flex items-center gap-1 text-xs font-bold"
-                            title="Send via WhatsApp"
+                            title="Modify & Send WhatsApp Message"
                           >
                             <MessageCircle className="w-4 h-4 text-emerald-600 fill-emerald-100" />
                             <span className="hidden md:inline">WhatsApp</span>
@@ -566,12 +585,9 @@ export const Purchases: React.FC<PurchasesProps> = ({
                         </button>
                       )}
                       <button
-                        onClick={() => {
-                          const supp = suppliers.find((s) => s.id === p.supplierId);
-                          shareInvoiceViaWhatsApp(p, true, settings, supp?.phone);
-                        }}
+                        onClick={() => handleOpenWhatsAppModal(p)}
                         className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
-                        title="Send via WhatsApp"
+                        title="Modify & Send WhatsApp Message"
                       >
                         <MessageCircle className="w-3.5 h-3.5 text-emerald-600 fill-emerald-200" />
                         <span>WhatsApp</span>
@@ -1079,6 +1095,21 @@ export const Purchases: React.FC<PurchasesProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* WhatsApp Message Customization & Preview Modal */}
+      {whatsAppModalData.isOpen && whatsAppModalData.purchase && (
+        <WhatsAppMessageModal
+          isOpen={whatsAppModalData.isOpen}
+          onClose={() => setWhatsAppModalData((prev) => ({ ...prev, isOpen: false }))}
+          title={`Modify WhatsApp Message: ${whatsAppModalData.purchase.purchaseNumber}`}
+          recipientName={whatsAppModalData.recipientName}
+          defaultPhone={whatsAppModalData.phone}
+          invoice={whatsAppModalData.purchase}
+          isPurchase={true}
+          settings={settings}
+          showToast={showToast}
+        />
       )}
     </div>
   );

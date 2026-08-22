@@ -554,13 +554,27 @@ export const StorageService = {
 
     // 3. Reduce Product Stock
     for (const item of invoiceData.items) {
-      const pIndex = products.findIndex(
-        (p) =>
-          (p.id === item.productId || p.code === item.productCode) &&
-          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
-      );
+      let pIndex = -1;
+      if (item.productId) {
+        pIndex = products.findIndex((p) => p.id === item.productId);
+      }
+      if (pIndex === -1 && item.productCode) {
+        const cleanCode = item.productCode.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+      }
+      if (pIndex === -1 && item.productName) {
+        const cleanName = item.productName.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+      }
+
       if (pIndex !== -1) {
-        products[pIndex].currentStock -= Number(item.quantity);
+        products[pIndex].currentStock = Math.max(0, Number(products[pIndex].currentStock || 0) - Number(item.quantity || 0));
+        products[pIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('products', products[pIndex].id);
+        SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('products', products[pIndex].id);
+        }).catch(() => {});
       }
     }
     setItem(STORAGE_KEYS.PRODUCTS, products);
@@ -571,7 +585,12 @@ export const StorageService = {
         (c) => c.id === invoiceData.customerId && (c.companyId || DEFAULT_COMPANY_ID) === targetCompId
       );
       if (cIndex !== -1) {
-        customers[cIndex].outstandingBalance += Number(invoiceData.dueAmount);
+        customers[cIndex].outstandingBalance = Number(customers[cIndex].outstandingBalance || 0) + Number(invoiceData.dueAmount);
+        customers[cIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('customers', customers[cIndex].id);
+        SupabaseSyncService.syncCustomer(customers[cIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('customers', customers[cIndex].id);
+        }).catch(() => {});
         setItem(STORAGE_KEYS.CUSTOMERS, customers);
       }
     }
@@ -587,6 +606,158 @@ export const StorageService = {
     return newInvoice;
   },
 
+  updateSaleInvoice(
+    id: string,
+    invoiceData: Partial<SaleInvoice>,
+    companyId?: string
+  ): SaleInvoice {
+    const sales = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);
+    const products = this.getProducts();
+    const customers = this.getCustomers();
+    const settings = this.getSettings();
+
+    const targetIndex = sales.findIndex((s) => s.id === id);
+    if (targetIndex === -1) {
+      throw new Error('Sale invoice not found.');
+    }
+
+    const oldSale = sales[targetIndex];
+    const targetCompId = oldSale.companyId || companyId || DEFAULT_COMPANY_ID;
+
+    // 1. Revert old stock reductions
+    for (const oldItem of oldSale.items) {
+      let pIndex = -1;
+      if (oldItem.productId) {
+        pIndex = products.findIndex((p) => p.id === oldItem.productId);
+      }
+      if (pIndex === -1 && oldItem.productCode) {
+        const cleanCode = oldItem.productCode.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+      }
+      if (pIndex === -1 && oldItem.productName) {
+        const cleanName = oldItem.productName.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName);
+      }
+
+      if (pIndex !== -1) {
+        products[pIndex].currentStock = Number(products[pIndex].currentStock || 0) + Number(oldItem.quantity || 0);
+        products[pIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('products', products[pIndex].id);
+        SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('products', products[pIndex].id);
+        }).catch(() => {});
+      }
+    }
+
+    // 2. Revert old customer outstanding
+    if (oldSale.customerId && oldSale.dueAmount > 0) {
+      const cIndex = customers.findIndex((c) => c.id === oldSale.customerId);
+      if (cIndex !== -1) {
+        customers[cIndex].outstandingBalance = Math.max(
+          0,
+          Number(customers[cIndex].outstandingBalance || 0) - Number(oldSale.dueAmount)
+        );
+        customers[cIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('customers', customers[cIndex].id);
+        SupabaseSyncService.syncCustomer(customers[cIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('customers', customers[cIndex].id);
+        }).catch(() => {});
+        setItem(STORAGE_KEYS.CUSTOMERS, customers);
+      }
+    }
+
+    // 3. Stock check for new items if negative stock is disallowed
+    const newItems = invoiceData.items || oldSale.items;
+    if (!settings.allowNegativeStock) {
+      for (const item of newItems) {
+        let prod = products.find((p) => p.id === item.productId);
+        if (!prod && item.productCode) {
+          const cleanCode = item.productCode.trim().toLowerCase();
+          prod = products.find((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        }
+        if (!prod && item.productName) {
+          const cleanName = item.productName.trim().toLowerCase();
+          prod = products.find((p) => p.name?.trim().toLowerCase() === cleanName && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        }
+        if (prod && prod.currentStock < item.quantity) {
+          throw new Error(
+            `Cannot save sale. Insufficient stock for "${prod.name}". Available: ${prod.currentStock}, Requested: ${item.quantity}.`
+          );
+        }
+      }
+    }
+
+    // 4. Apply new stock reductions
+    for (const newItem of newItems) {
+      let pIndex = -1;
+      if (newItem.productId) {
+        pIndex = products.findIndex((p) => p.id === newItem.productId);
+      }
+      if (pIndex === -1 && newItem.productCode) {
+        const cleanCode = newItem.productCode.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+      }
+      if (pIndex === -1 && newItem.productName) {
+        const cleanName = newItem.productName.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName);
+      }
+
+      if (pIndex !== -1) {
+        products[pIndex].currentStock = Math.max(0, Number(products[pIndex].currentStock || 0) - Number(newItem.quantity || 0));
+        products[pIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('products', products[pIndex].id);
+        SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('products', products[pIndex].id);
+        }).catch(() => {});
+      }
+    }
+    setItem(STORAGE_KEYS.PRODUCTS, products);
+
+    // 5. Apply new customer outstanding
+    const newCustomerId = invoiceData.customerId !== undefined ? invoiceData.customerId : oldSale.customerId;
+    const newDueAmount = invoiceData.dueAmount !== undefined ? invoiceData.dueAmount : oldSale.dueAmount;
+
+    if (newCustomerId && Number(newDueAmount) > 0) {
+      const cIndex = customers.findIndex(
+        (c) => c.id === newCustomerId && (c.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
+      if (cIndex !== -1) {
+        customers[cIndex].outstandingBalance = Number(customers[cIndex].outstandingBalance || 0) + Number(newDueAmount);
+        customers[cIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('customers', customers[cIndex].id);
+        SupabaseSyncService.syncCustomer(customers[cIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('customers', customers[cIndex].id);
+        }).catch(() => {});
+        setItem(STORAGE_KEYS.CUSTOMERS, customers);
+      }
+    }
+
+    // 6. Update sale record
+    const updatedSale: SaleInvoice = {
+      ...oldSale,
+      ...invoiceData,
+      items: newItems,
+      companyId: targetCompId,
+      id: oldSale.id,
+      invoiceNumber: oldSale.invoiceNumber,
+      createdAt: oldSale.createdAt,
+      updatedAt: new Date().toISOString()
+    };
+
+    sales[targetIndex] = updatedSale;
+    setItem(STORAGE_KEYS.SALES, sales);
+    addPendingSyncId('sales', updatedSale.id);
+    SupabaseSyncService.syncSaleInvoice(updatedSale).then((res) => {
+      if (res?.success) removePendingSyncId('sales', updatedSale.id);
+    }).catch(() => {});
+
+    return updatedSale;
+  },
+
   deleteSaleInvoice(id: string): void {
     addDeletedId(id);
     removePendingSyncId('sales', id);
@@ -600,9 +771,22 @@ export const StorageService = {
 
       // Restore stock
       for (const item of target.items) {
-        const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
+        let pIndex = -1;
+        if (item.productId) {
+          pIndex = products.findIndex((p) => p.id === item.productId);
+        }
+        if (pIndex === -1 && item.productCode) {
+          const cleanCode = item.productCode.trim().toLowerCase();
+          pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === (target.companyId || DEFAULT_COMPANY_ID));
+          if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+        }
         if (pIndex !== -1) {
-          products[pIndex].currentStock += Number(item.quantity);
+          products[pIndex].currentStock = Number(products[pIndex].currentStock || 0) + Number(item.quantity || 0);
+          products[pIndex].updatedAt = new Date().toISOString();
+          addPendingSyncId('products', products[pIndex].id);
+          SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+            if (res?.success) removePendingSyncId('products', products[pIndex].id);
+          }).catch(() => {});
         }
       }
       setItem(STORAGE_KEYS.PRODUCTS, products);
@@ -613,8 +797,13 @@ export const StorageService = {
         if (cIndex !== -1) {
           customers[cIndex].outstandingBalance = Math.max(
             0,
-            customers[cIndex].outstandingBalance - Number(target.dueAmount)
+            Number(customers[cIndex].outstandingBalance || 0) - Number(target.dueAmount)
           );
+          customers[cIndex].updatedAt = new Date().toISOString();
+          addPendingSyncId('customers', customers[cIndex].id);
+          SupabaseSyncService.syncCustomer(customers[cIndex]).then((res) => {
+            if (res?.success) removePendingSyncId('customers', customers[cIndex].id);
+          }).catch(() => {});
           setItem(STORAGE_KEYS.CUSTOMERS, customers);
         }
       }
@@ -660,17 +849,62 @@ export const StorageService = {
 
     // 2. Increase Product Stock
     for (const item of purchaseData.items) {
-      const pIndex = products.findIndex(
-        (p) =>
-          (p.id === item.productId || p.code === item.productCode) &&
-          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
-      );
+      let pIndex = -1;
+      if (item.productId) {
+        pIndex = products.findIndex((p) => p.id === item.productId);
+      }
+      if (pIndex === -1 && item.productCode) {
+        const cleanCode = item.productCode.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+      }
+      if (pIndex === -1 && item.productName) {
+        const cleanName = item.productName.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName);
+      }
+
       if (pIndex !== -1) {
-        products[pIndex].currentStock += Number(item.quantity);
+        products[pIndex].currentStock = Number(products[pIndex].currentStock || 0) + Number(item.quantity || 0);
         // Update cost price if provided
-        if (item.unitCost > 0) {
+        if (Number(item.unitCost) > 0) {
           products[pIndex].costPrice = Number(item.unitCost);
         }
+        products[pIndex].updatedAt = new Date().toISOString();
+        item.productId = products[pIndex].id;
+        item.productCode = products[pIndex].code;
+        item.productName = products[pIndex].name;
+        addPendingSyncId('products', products[pIndex].id);
+        SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('products', products[pIndex].id);
+        }).catch(() => {});
+      } else if (item.productName || item.productCode) {
+        // Auto-create product if it did not exist
+        const newAutoProd: Product = {
+          id: item.productId || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          companyId: targetCompId,
+          code: item.productCode || `PROD-${String(products.length + 1).padStart(3, '0')}`,
+          name: item.productName || 'New Product',
+          category: 'General',
+          unit: item.unit || 'Nos',
+          costPrice: Number(item.unitCost || 0),
+          sellingPrice: Number(item.unitCost || 0) > 0 ? Number(item.unitCost || 0) * 1.2 : 0,
+          currentStock: Number(item.quantity || 0),
+          reorderLevel: 10,
+          openingStock: 0,
+          openingRate: Number(item.unitCost || 0),
+          openingValue: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        products.push(newAutoProd);
+        item.productId = newAutoProd.id;
+        item.productCode = newAutoProd.code;
+        item.productName = newAutoProd.name;
+        addPendingSyncId('products', newAutoProd.id);
+        SupabaseSyncService.syncProduct(newAutoProd).then((res) => {
+          if (res?.success) removePendingSyncId('products', newAutoProd.id);
+        }).catch(() => {});
       }
     }
     setItem(STORAGE_KEYS.PRODUCTS, products);
@@ -681,7 +915,12 @@ export const StorageService = {
         (s) => s.id === purchaseData.supplierId && (s.companyId || DEFAULT_COMPANY_ID) === targetCompId
       );
       if (sIndex !== -1) {
-        suppliers[sIndex].payableBalance += Number(purchaseData.dueAmount);
+        suppliers[sIndex].payableBalance = Number(suppliers[sIndex].payableBalance || 0) + Number(purchaseData.dueAmount);
+        suppliers[sIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('suppliers', suppliers[sIndex].id);
+        SupabaseSyncService.syncSupplier(suppliers[sIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('suppliers', suppliers[sIndex].id);
+        }).catch(() => {});
         setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
       }
     }
@@ -715,13 +954,28 @@ export const StorageService = {
 
     // 1. Revert old stock additions
     for (const oldItem of oldPurchase.items) {
-      const pIndex = products.findIndex(
-        (p) =>
-          (p.id === oldItem.productId || p.code === oldItem.productCode) &&
-          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
-      );
+      let pIndex = -1;
+      if (oldItem.productId) {
+        pIndex = products.findIndex((p) => p.id === oldItem.productId);
+      }
+      if (pIndex === -1 && oldItem.productCode) {
+        const cleanCode = oldItem.productCode.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+      }
+      if (pIndex === -1 && oldItem.productName) {
+        const cleanName = oldItem.productName.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName);
+      }
+
       if (pIndex !== -1) {
-        products[pIndex].currentStock -= Number(oldItem.quantity);
+        products[pIndex].currentStock = Math.max(0, Number(products[pIndex].currentStock || 0) - Number(oldItem.quantity || 0));
+        products[pIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('products', products[pIndex].id);
+        SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('products', products[pIndex].id);
+        }).catch(() => {});
       }
     }
 
@@ -733,24 +987,74 @@ export const StorageService = {
       if (sIndex !== -1) {
         suppliers[sIndex].payableBalance = Math.max(
           0,
-          suppliers[sIndex].payableBalance - Number(oldPurchase.dueAmount)
+          Number(suppliers[sIndex].payableBalance || 0) - Number(oldPurchase.dueAmount)
         );
+        suppliers[sIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('suppliers', suppliers[sIndex].id);
+        SupabaseSyncService.syncSupplier(suppliers[sIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('suppliers', suppliers[sIndex].id);
+        }).catch(() => {});
       }
     }
 
     // 3. Apply new stock additions
     const newItems = purchaseData.items || oldPurchase.items;
     for (const newItem of newItems) {
-      const pIndex = products.findIndex(
-        (p) =>
-          (p.id === newItem.productId || p.code === newItem.productCode) &&
-          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
-      );
+      let pIndex = -1;
+      if (newItem.productId) {
+        pIndex = products.findIndex((p) => p.id === newItem.productId);
+      }
+      if (pIndex === -1 && newItem.productCode) {
+        const cleanCode = newItem.productCode.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+      }
+      if (pIndex === -1 && newItem.productName) {
+        const cleanName = newItem.productName.trim().toLowerCase();
+        pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName && (p.companyId || DEFAULT_COMPANY_ID) === targetCompId);
+        if (pIndex === -1) pIndex = products.findIndex((p) => p.name?.trim().toLowerCase() === cleanName);
+      }
+
       if (pIndex !== -1) {
-        products[pIndex].currentStock += Number(newItem.quantity);
-        if (newItem.unitCost > 0) {
+        products[pIndex].currentStock = Number(products[pIndex].currentStock || 0) + Number(newItem.quantity || 0);
+        if (Number(newItem.unitCost) > 0) {
           products[pIndex].costPrice = Number(newItem.unitCost);
         }
+        products[pIndex].updatedAt = new Date().toISOString();
+        newItem.productId = products[pIndex].id;
+        newItem.productCode = products[pIndex].code;
+        newItem.productName = products[pIndex].name;
+        addPendingSyncId('products', products[pIndex].id);
+        SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('products', products[pIndex].id);
+        }).catch(() => {});
+      } else if (newItem.productName || newItem.productCode) {
+        // Auto-create product if new
+        const newAutoProd: Product = {
+          id: newItem.productId || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          companyId: targetCompId,
+          code: newItem.productCode || `PROD-${String(products.length + 1).padStart(3, '0')}`,
+          name: newItem.productName || 'New Product',
+          category: 'General',
+          unit: newItem.unit || 'Nos',
+          costPrice: Number(newItem.unitCost || 0),
+          sellingPrice: Number(newItem.unitCost || 0) > 0 ? Number(newItem.unitCost || 0) * 1.2 : 0,
+          currentStock: Number(newItem.quantity || 0),
+          reorderLevel: 10,
+          openingStock: 0,
+          openingRate: Number(newItem.unitCost || 0),
+          openingValue: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        products.push(newAutoProd);
+        newItem.productId = newAutoProd.id;
+        newItem.productCode = newAutoProd.code;
+        newItem.productName = newAutoProd.name;
+        addPendingSyncId('products', newAutoProd.id);
+        SupabaseSyncService.syncProduct(newAutoProd).then((res) => {
+          if (res?.success) removePendingSyncId('products', newAutoProd.id);
+        }).catch(() => {});
       }
     }
     setItem(STORAGE_KEYS.PRODUCTS, products);
@@ -759,12 +1063,17 @@ export const StorageService = {
     const newSupplierId = purchaseData.supplierId !== undefined ? purchaseData.supplierId : oldPurchase.supplierId;
     const newDueAmount = purchaseData.dueAmount !== undefined ? purchaseData.dueAmount : oldPurchase.dueAmount;
 
-    if (newSupplierId && newDueAmount > 0) {
+    if (newSupplierId && Number(newDueAmount) > 0) {
       const sIndex = suppliers.findIndex(
         (s) => s.id === newSupplierId && (s.companyId || DEFAULT_COMPANY_ID) === targetCompId
       );
       if (sIndex !== -1) {
-        suppliers[sIndex].payableBalance += Number(newDueAmount);
+        suppliers[sIndex].payableBalance = Number(suppliers[sIndex].payableBalance || 0) + Number(newDueAmount);
+        suppliers[sIndex].updatedAt = new Date().toISOString();
+        addPendingSyncId('suppliers', suppliers[sIndex].id);
+        SupabaseSyncService.syncSupplier(suppliers[sIndex]).then((res) => {
+          if (res?.success) removePendingSyncId('suppliers', suppliers[sIndex].id);
+        }).catch(() => {});
       }
     }
     setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
@@ -773,6 +1082,7 @@ export const StorageService = {
     const updatedPurchase: PurchaseInvoice = {
       ...oldPurchase,
       ...purchaseData,
+      items: newItems,
       id: oldPurchase.id,
       purchaseNumber: oldPurchase.purchaseNumber,
       companyId: targetCompId,
@@ -803,9 +1113,22 @@ export const StorageService = {
 
       // Revert stock (subtract added stock)
       for (const item of target.items) {
-        const pIndex = products.findIndex((p) => p.id === item.productId || p.code === item.productCode);
+        let pIndex = -1;
+        if (item.productId) {
+          pIndex = products.findIndex((p) => p.id === item.productId);
+        }
+        if (pIndex === -1 && item.productCode) {
+          const cleanCode = item.productCode.trim().toLowerCase();
+          pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode && (p.companyId || DEFAULT_COMPANY_ID) === (target.companyId || DEFAULT_COMPANY_ID));
+          if (pIndex === -1) pIndex = products.findIndex((p) => p.code?.trim().toLowerCase() === cleanCode);
+        }
         if (pIndex !== -1) {
-          products[pIndex].currentStock -= Number(item.quantity);
+          products[pIndex].currentStock = Math.max(0, Number(products[pIndex].currentStock || 0) - Number(item.quantity || 0));
+          products[pIndex].updatedAt = new Date().toISOString();
+          addPendingSyncId('products', products[pIndex].id);
+          SupabaseSyncService.syncProduct(products[pIndex]).then((res) => {
+            if (res?.success) removePendingSyncId('products', products[pIndex].id);
+          }).catch(() => {});
         }
       }
       setItem(STORAGE_KEYS.PRODUCTS, products);
@@ -816,8 +1139,13 @@ export const StorageService = {
         if (sIndex !== -1) {
           suppliers[sIndex].payableBalance = Math.max(
             0,
-            suppliers[sIndex].payableBalance - Number(target.dueAmount)
+            Number(suppliers[sIndex].payableBalance || 0) - Number(target.dueAmount)
           );
+          suppliers[sIndex].updatedAt = new Date().toISOString();
+          addPendingSyncId('suppliers', suppliers[sIndex].id);
+          SupabaseSyncService.syncSupplier(suppliers[sIndex]).then((res) => {
+            if (res?.success) removePendingSyncId('suppliers', suppliers[sIndex].id);
+          }).catch(() => {});
           setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
         }
       }
@@ -1528,23 +1856,31 @@ export const StorageService = {
         const targetComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((p) => (p.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
-        const remoteMap = new Map<string, Product>();
-        remoteProducts.forEach((r) => {
-          remoteMap.set(r.id, r);
-          if (r.code) remoteMap.set(`code:${r.code.toLowerCase().trim()}`, r);
-        });
+        const mergedMap = new Map<string, Product>();
+        remoteProducts.forEach((r) => mergedMap.set(r.id, r));
 
-        const mergedCompProducts: Product[] = [...remoteProducts];
         targetComp.forEach((loc) => {
-          const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
-          if (!isRemotePresent && pendingProducts.has(loc.id)) {
-            mergedCompProducts.push(loc);
-            SupabaseSyncService.syncProduct(loc).then((res) => {
-              if (res?.success) removePendingSyncId('products', loc.id);
-            }).catch(() => {});
+          const rem = mergedMap.get(loc.id);
+          if (!rem) {
+            if (pendingProducts.has(loc.id)) {
+              mergedMap.set(loc.id, loc);
+              SupabaseSyncService.syncProduct(loc).then((res) => {
+                if (res?.success) removePendingSyncId('products', loc.id);
+              }).catch(() => {});
+            }
+          } else {
+            const locTime = new Date(loc.updatedAt || loc.createdAt || 0).getTime();
+            const remTime = new Date(rem.updatedAt || rem.createdAt || 0).getTime();
+            if (pendingProducts.has(loc.id) || locTime > remTime) {
+              mergedMap.set(loc.id, loc);
+              SupabaseSyncService.syncProduct(loc).then((res) => {
+                if (res?.success) removePendingSyncId('products', loc.id);
+              }).catch(() => {});
+            }
           }
         });
 
+        const mergedCompProducts = Array.from(mergedMap.values());
         setItem(STORAGE_KEYS.PRODUCTS, [...mergedCompProducts, ...otherComp]);
         pulledCounts.products = mergedCompProducts.length;
       }
@@ -1555,23 +1891,31 @@ export const StorageService = {
         const targetComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((c) => (c.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
-        const remoteMap = new Map<string, Customer>();
-        remoteCustomers.forEach((r) => {
-          remoteMap.set(r.id, r);
-          if (r.code) remoteMap.set(`code:${r.code.toLowerCase().trim()}`, r);
-        });
+        const mergedMap = new Map<string, Customer>();
+        remoteCustomers.forEach((r) => mergedMap.set(r.id, r));
 
-        const mergedCompCustomers: Customer[] = [...remoteCustomers];
         targetComp.forEach((loc) => {
-          const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
-          if (!isRemotePresent && pendingCustomers.has(loc.id)) {
-            mergedCompCustomers.push(loc);
-            SupabaseSyncService.syncCustomer(loc).then((res) => {
-              if (res?.success) removePendingSyncId('customers', loc.id);
-            }).catch(() => {});
+          const rem = mergedMap.get(loc.id);
+          if (!rem) {
+            if (pendingCustomers.has(loc.id)) {
+              mergedMap.set(loc.id, loc);
+              SupabaseSyncService.syncCustomer(loc).then((res) => {
+                if (res?.success) removePendingSyncId('customers', loc.id);
+              }).catch(() => {});
+            }
+          } else {
+            const locTime = new Date(loc.updatedAt || loc.createdAt || 0).getTime();
+            const remTime = new Date(rem.updatedAt || rem.createdAt || 0).getTime();
+            if (pendingCustomers.has(loc.id) || locTime > remTime) {
+              mergedMap.set(loc.id, loc);
+              SupabaseSyncService.syncCustomer(loc).then((res) => {
+                if (res?.success) removePendingSyncId('customers', loc.id);
+              }).catch(() => {});
+            }
           }
         });
 
+        const mergedCompCustomers = Array.from(mergedMap.values());
         setItem(STORAGE_KEYS.CUSTOMERS, [...mergedCompCustomers, ...otherComp]);
         pulledCounts.customers = mergedCompCustomers.length;
       }
@@ -1582,23 +1926,31 @@ export const StorageService = {
         const targetComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) === companyId) : local;
         const otherComp = companyId ? local.filter((s) => (s.companyId || DEFAULT_COMPANY_ID) !== companyId) : [];
 
-        const remoteMap = new Map<string, Supplier>();
-        remoteSuppliers.forEach((r) => {
-          remoteMap.set(r.id, r);
-          if (r.code) remoteMap.set(`code:${r.code.toLowerCase().trim()}`, r);
-        });
+        const mergedMap = new Map<string, Supplier>();
+        remoteSuppliers.forEach((r) => mergedMap.set(r.id, r));
 
-        const mergedCompSuppliers: Supplier[] = [...remoteSuppliers];
         targetComp.forEach((loc) => {
-          const isRemotePresent = remoteMap.has(loc.id) || (loc.code && remoteMap.has(`code:${loc.code.toLowerCase().trim()}`));
-          if (!isRemotePresent && pendingSuppliers.has(loc.id)) {
-            mergedCompSuppliers.push(loc);
-            SupabaseSyncService.syncSupplier(loc).then((res) => {
-              if (res?.success) removePendingSyncId('suppliers', loc.id);
-            }).catch(() => {});
+          const rem = mergedMap.get(loc.id);
+          if (!rem) {
+            if (pendingSuppliers.has(loc.id)) {
+              mergedMap.set(loc.id, loc);
+              SupabaseSyncService.syncSupplier(loc).then((res) => {
+                if (res?.success) removePendingSyncId('suppliers', loc.id);
+              }).catch(() => {});
+            }
+          } else {
+            const locTime = new Date(loc.updatedAt || loc.createdAt || 0).getTime();
+            const remTime = new Date(rem.updatedAt || rem.createdAt || 0).getTime();
+            if (pendingSuppliers.has(loc.id) || locTime > remTime) {
+              mergedMap.set(loc.id, loc);
+              SupabaseSyncService.syncSupplier(loc).then((res) => {
+                if (res?.success) removePendingSyncId('suppliers', loc.id);
+              }).catch(() => {});
+            }
           }
         });
 
+        const mergedCompSuppliers = Array.from(mergedMap.values());
         setItem(STORAGE_KEYS.SUPPLIERS, [...mergedCompSuppliers, ...otherComp]);
         pulledCounts.suppliers = mergedCompSuppliers.length;
       }
