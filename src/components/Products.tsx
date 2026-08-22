@@ -11,18 +11,26 @@ import {
   X,
   AlertCircle,
   ArrowRightLeft,
-  Sparkles
+  Sparkles,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  Calculator,
+  Info
 } from 'lucide-react';
-import { Product, AppSettings, AuthSession } from '../types';
+import { Product, AppSettings, AuthSession, PurchaseInvoice, SaleInvoice } from '../types';
 import { checkPermission } from '../lib/permissions';
 import { STANDARD_SIMPLE_UNITS, UnitService } from '../lib/units';
 import { UnitManagement } from './UnitManagement';
 
 interface ProductsProps {
   products: Product[];
+  purchases?: PurchaseInvoice[];
+  sales?: SaleInvoice[];
   settings: AppSettings;
   onSaveProduct: (product: Partial<Product>) => void;
   onDeleteProduct: (id: string) => void;
+  onRecalculateStock?: () => void;
   validateProduct: (code: string, name: string, excludeId?: string) => string | null;
   showToast: (type: 'success' | 'error' | 'info', message: string) => void;
   session?: AuthSession | null;
@@ -30,9 +38,12 @@ interface ProductsProps {
 
 export const Products: React.FC<ProductsProps> = ({
   products,
+  purchases = [],
+  sales = [],
   settings,
   onSaveProduct,
   onDeleteProduct,
+  onRecalculateStock,
   validateProduct,
   showToast,
   session
@@ -42,6 +53,8 @@ export const Products: React.FC<ProductsProps> = ({
   const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW' | 'OUT'>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUnitManagerOpen, setIsUnitManagerOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -180,6 +193,61 @@ export const Products: React.FC<ProductsProps> = ({
     (p) => p.currentStock <= p.reorderLevel && p.currentStock > 0
   ).length;
 
+  // Calculate inward (purchases) and outward (sales) for each product
+  const getProductStockFlow = (prod: Product) => {
+    const cleanCode = (prod.code || '').trim().toLowerCase();
+    const cleanName = (prod.name || '').trim().toLowerCase();
+
+    let totalPurchased = 0;
+    for (const pu of purchases) {
+      for (const item of pu.items || []) {
+        const matchId = Boolean(item.productId && item.productId === prod.id);
+        const matchCode = Boolean(cleanCode && item.productCode && item.productCode.trim().toLowerCase() === cleanCode);
+        const matchName = Boolean(cleanName && item.productName && item.productName.trim().toLowerCase() === cleanName);
+        if (matchId || matchCode || matchName) {
+          totalPurchased += Number(item.quantity || 0);
+        }
+      }
+    }
+
+    let totalSold = 0;
+    for (const sa of sales) {
+      for (const item of sa.items || []) {
+        const matchId = Boolean(item.productId && item.productId === prod.id);
+        const matchCode = Boolean(cleanCode && item.productCode && item.productCode.trim().toLowerCase() === cleanCode);
+        const matchName = Boolean(cleanName && item.productName && item.productName.trim().toLowerCase() === cleanName);
+        if (matchId || matchCode || matchName) {
+          totalSold += Number(item.quantity || 0);
+        }
+      }
+    }
+
+    const opening = Number(
+      prod.openingStock !== undefined && prod.openingStock !== null
+        ? prod.openingStock
+        : Math.max(0, Number(prod.currentStock || 0) - totalPurchased + totalSold)
+    );
+
+    return {
+      opening,
+      purchased: totalPurchased,
+      sold: totalSold,
+      calculated: opening + totalPurchased - totalSold,
+      current: prod.currentStock
+    };
+  };
+
+  const handleTriggerRecalculate = () => {
+    setIsRecalculating(true);
+    if (onRecalculateStock) {
+      onRecalculateStock();
+    }
+    setTimeout(() => {
+      setIsRecalculating(false);
+      showToast('success', 'Stock recalculated from all purchases (+) and sales (-).');
+    }, 400);
+  };
+
   return (
     <div className="space-y-6 pb-8">
       {/* Top Banner */}
@@ -187,22 +255,41 @@ export const Products: React.FC<ProductsProps> = ({
         <div>
           <h2 className="text-xl font-bold text-slate-900">Product Inventory</h2>
           <p className="text-xs text-slate-500">
-            Catalog of products, prices, stock levels & reorder alerts
+            Catalog of products, prices, stock levels & live purchase/sales inventory tracking
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleTriggerRecalculate}
+            disabled={isRecalculating}
+            className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-3 py-2 rounded-xl text-xs border border-emerald-200 transition-all cursor-pointer disabled:opacity-50"
+            title="Recalculate inventory from all purchase additions and sales deductions"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isRecalculating ? 'animate-spin' : ''}`} />
+            <span>{isRecalculating ? 'Recalculating...' : 'Sync Stock'}</span>
+          </button>
+
+          <button
+            onClick={() => setIsAuditModalOpen(true)}
+            className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold px-3 py-2 rounded-xl text-xs border border-indigo-200 transition-all cursor-pointer"
+            title="View Opening, Purchases (+), Sales (-) breakdown"
+          >
+            <Calculator className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Stock Audit Flow</span>
+          </button>
+
           <button
             onClick={() => setIsUnitManagerOpen(true)}
-            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3.5 py-2 rounded-xl text-xs border border-slate-300 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-2 rounded-xl text-xs border border-slate-300 transition-all cursor-pointer"
           >
-            <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+            <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600" />
             <span>Units & Conversions</span>
           </button>
 
-          <div className="bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl text-right">
-            <span className="text-[10px] font-bold text-amber-700 uppercase block">Low Stock Items</span>
-            <span className="text-lg font-black text-amber-900 font-mono">
+          <div className="bg-amber-50 border border-amber-200 px-3.5 py-1.5 rounded-xl text-right">
+            <span className="text-[10px] font-bold text-amber-700 uppercase block">Low Stock</span>
+            <span className="text-base font-black text-amber-900 font-mono">
               {lowStockCount} items
             </span>
           </div>
@@ -210,7 +297,7 @@ export const Products: React.FC<ProductsProps> = ({
           {canAdd && (
             <button
               onClick={handleOpenAdd}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer text-sm"
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl shadow-xs transition-all cursor-pointer text-xs"
             >
               <Plus className="w-4 h-4 text-yellow-400" />
               <span>Add Product</span>
@@ -342,19 +429,39 @@ export const Products: React.FC<ProductsProps> = ({
                         <span className="text-[10px] text-slate-400 block font-sans font-normal">/{unitLabel}</span>
                       </td>
                       <td className="p-4 text-center">
-                        <div className="inline-flex items-center gap-1.5">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-black font-mono border ${
-                              isOut
-                                ? 'bg-rose-100 text-rose-800 border-rose-200'
-                                : isLow
-                                ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                                : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                            }`}
-                          >
-                            {stockDisplay}
-                          </span>
-                        </div>
+                        {(() => {
+                          const flow = getProductStockFlow(prod);
+                          return (
+                            <div className="inline-flex flex-col items-center">
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-black font-mono border ${
+                                  isOut
+                                    ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                    : isLow
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                }`}
+                                title={`Opening: ${flow.opening} + Purchases: ${flow.purchased} - Sales: ${flow.sold} = Current: ${flow.current}`}
+                              >
+                                {stockDisplay}
+                              </span>
+                              <div className="flex items-center gap-1.5 mt-1 text-[10px] font-mono font-semibold">
+                                <span
+                                  className="text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200"
+                                  title={`Total Units Purchased: ${flow.purchased}`}
+                                >
+                                  +{flow.purchased}
+                                </span>
+                                <span
+                                  className="text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200"
+                                  title={`Total Units Sold: ${flow.sold}`}
+                                >
+                                  -{flow.sold}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -635,6 +742,127 @@ export const Products: React.FC<ProductsProps> = ({
           </div>
         </div>
       )}
+      {/* Stock Flow Audit Modal */}
+      {isAuditModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-4xl w-full p-6 animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-700">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-slate-900">Inventory Stock Audit & Formula Flow</h3>
+                  <p className="text-xs text-slate-500">
+                    Live mathematical formula: <span className="font-mono font-bold text-indigo-700">Current Stock = Opening Stock + Total Purchases (Inward) - Total Sales (Outward)</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleTriggerRecalculate}
+                  disabled={isRecalculating}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRecalculating ? 'animate-spin' : ''}`} />
+                  <span>{isRecalculating ? 'Recalculating...' : 'Sync & Recalculate Now'}</span>
+                </button>
+                <button
+                  onClick={() => setIsAuditModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Catalog Items</span>
+                  <span className="text-xl font-bold font-mono text-slate-900">{products.length}</span>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 p-3 rounded-2xl">
+                  <span className="text-[10px] font-bold text-blue-700 uppercase block">Total Units Inward (Purchased)</span>
+                  <span className="text-xl font-bold font-mono text-blue-900">
+                    +{products.reduce((acc, p) => acc + getProductStockFlow(p).purchased, 0)}
+                  </span>
+                </div>
+                <div className="bg-rose-50 border border-rose-200 p-3 rounded-2xl">
+                  <span className="text-[10px] font-bold text-rose-700 uppercase block">Total Units Outward (Sold)</span>
+                  <span className="text-xl font-bold font-mono text-rose-900">
+                    -{products.reduce((acc, p) => acc + getProductStockFlow(p).sold, 0)}
+                  </span>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl">
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase block">Total Physical On-Hand</span>
+                  <span className="text-xl font-bold font-mono text-emerald-900">
+                    {products.reduce((acc, p) => acc + Number(p.currentStock || 0), 0)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200">
+                      <th className="p-3">Item Code</th>
+                      <th className="p-3">Product Name</th>
+                      <th className="p-3 text-right">Opening Stock</th>
+                      <th className="p-3 text-right text-emerald-700">+ Purchases</th>
+                      <th className="p-3 text-right text-rose-700">- Sales</th>
+                      <th className="p-3 text-right font-black">= Current Stock</th>
+                      <th className="p-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {products.map((p) => {
+                      const flow = getProductStockFlow(p);
+                      const unit = p.unit || p.primaryUnit || 'Nos';
+                      return (
+                        <tr key={`audit-${p.id}`} className="hover:bg-slate-50">
+                          <td className="p-3 font-mono font-bold text-slate-900">{p.code}</td>
+                          <td className="p-3 font-semibold text-slate-800">{p.name}</td>
+                          <td className="p-3 text-right font-mono text-slate-600">{flow.opening} {unit}</td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-700 bg-emerald-50/50">+{flow.purchased} {unit}</td>
+                          <td className="p-3 text-right font-mono font-bold text-rose-700 bg-rose-50/50">-{flow.sold} {unit}</td>
+                          <td className="p-3 text-right font-mono font-black text-slate-900 bg-slate-50">
+                            {flow.current} {unit}
+                          </td>
+                          <td className="p-3 text-center">
+                            {flow.current <= 0 ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">Out of Stock</span>
+                            ) : flow.current <= p.reorderLevel ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">Low Stock</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">Normal</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <Info className="w-4 h-4 text-slate-400" />
+                <span>Any created, edited, or voided purchases and sales are immediately synced and audited.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer shadow-xs"
+              >
+                Close Audit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Unit Management Modal */}
       <UnitManagement
         settings={settings}

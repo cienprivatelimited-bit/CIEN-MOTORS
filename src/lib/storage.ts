@@ -502,6 +502,115 @@ export const StorageService = {
     SupabaseSyncService.deleteProduct(id).catch(() => {});
   },
 
+  // Recalculate and synchronize product currentStock based on Opening Stock + Total Purchases - Total Sales
+  recalculateProductStock(companyId?: string): {
+    updatedCount: number;
+    details: Array<{
+      id: string;
+      code: string;
+      name: string;
+      openingStock: number;
+      totalPurchased: number;
+      totalSold: number;
+      currentStock: number;
+    }>;
+  } {
+    const allProducts = getItem<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    const allPurchases = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, INITIAL_PURCHASES);
+    const allSales = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);
+    const deletedIds = getDeletedIds();
+    const settings = this.getSettings();
+
+    const validPurchases = allPurchases.filter((p) => p && p.id && !deletedIds.has(p.id));
+    const validSales = allSales.filter((s) => s && s.id && !deletedIds.has(s.id));
+
+    const targetCompId = companyId || DEFAULT_COMPANY_ID;
+    const details: Array<{
+      id: string;
+      code: string;
+      name: string;
+      openingStock: number;
+      totalPurchased: number;
+      totalSold: number;
+      currentStock: number;
+    }> = [];
+
+    for (let i = 0; i < allProducts.length; i++) {
+      const prod = allProducts[i];
+      if (!prod || !prod.id || deletedIds.has(prod.id)) continue;
+      if (companyId && (prod.companyId || DEFAULT_COMPANY_ID) !== targetCompId) continue;
+
+      const prodCompId = prod.companyId || DEFAULT_COMPANY_ID;
+      const cleanCode = (prod.code || '').trim().toLowerCase();
+      const cleanName = (prod.name || '').trim().toLowerCase();
+
+      // Total purchased for this product in the target company
+      let totalPurchased = 0;
+      for (const pu of validPurchases) {
+        if ((pu.companyId || DEFAULT_COMPANY_ID) !== prodCompId) continue;
+        for (const item of (pu.items || [])) {
+          const matchId = Boolean(item.productId && item.productId === prod.id);
+          const matchCode = Boolean(cleanCode && item.productCode && item.productCode.trim().toLowerCase() === cleanCode);
+          const matchName = Boolean(cleanName && item.productName && item.productName.trim().toLowerCase() === cleanName);
+          if (matchId || matchCode || matchName) {
+            totalPurchased += Number(item.quantity || 0);
+          }
+        }
+      }
+
+      // Total sold for this product in the target company
+      let totalSold = 0;
+      for (const sa of validSales) {
+        if ((sa.companyId || DEFAULT_COMPANY_ID) !== prodCompId) continue;
+        for (const item of (sa.items || [])) {
+          const matchId = Boolean(item.productId && item.productId === prod.id);
+          const matchCode = Boolean(cleanCode && item.productCode && item.productCode.trim().toLowerCase() === cleanCode);
+          const matchName = Boolean(cleanName && item.productName && item.productName.trim().toLowerCase() === cleanName);
+          if (matchId || matchCode || matchName) {
+            totalSold += Number(item.quantity || 0);
+          }
+        }
+      }
+
+      const opening = Number(
+        prod.openingStock !== undefined && prod.openingStock !== null
+          ? prod.openingStock
+          : prod.currentStock !== undefined
+          ? prod.currentStock
+          : 0
+      );
+
+      // Ensure openingStock field is saved
+      if (prod.openingStock === undefined || prod.openingStock === null) {
+        prod.openingStock = opening;
+      }
+
+      const calculatedStock = opening + totalPurchased - totalSold;
+      const finalStock = settings.allowNegativeStock ? calculatedStock : Math.max(0, calculatedStock);
+
+      prod.currentStock = finalStock;
+      prod.updatedAt = new Date().toISOString();
+
+      details.push({
+        id: prod.id,
+        code: prod.code,
+        name: prod.name,
+        openingStock: opening,
+        totalPurchased,
+        totalSold,
+        currentStock: finalStock
+      });
+
+      addPendingSyncId('products', prod.id);
+      SupabaseSyncService.syncProduct(prod).then((res) => {
+        if (res?.success) removePendingSyncId('products', prod.id);
+      }).catch(() => {});
+    }
+
+    setItem(STORAGE_KEYS.PRODUCTS, allProducts);
+    return { updatedCount: details.length, details };
+  },
+
   // --- SALES & INVOICES ---
   getSales(companyId?: string): SaleInvoice[] {
     const raw = getItem<SaleInvoice[]>(STORAGE_KEYS.SALES, INITIAL_SALES);

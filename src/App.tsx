@@ -155,6 +155,7 @@ export default function App() {
   // Reload all states from Storage Engine (Company Isolated)
   const refreshAllStates = (compId?: string) => {
     const activeCompId = compId || session?.company?.id;
+    StorageService.recalculateProductStock(activeCompId);
     setCompanies(StorageService.getCompanies());
     setSettings(StorageService.getSettings());
     setCustomers(StorageService.getCustomers(activeCompId));
@@ -638,9 +639,16 @@ export default function App() {
           {currentPage === 'products' && (
             <Products
               products={products}
+              purchases={purchases}
+              sales={sales}
               settings={settings}
               onSaveProduct={handleSaveProduct}
               onDeleteProduct={handleDeleteProduct}
+              onRecalculateStock={() => {
+                const res = StorageService.recalculateProductStock(activeCompId);
+                refreshAllStates(activeCompId);
+                addToast('success', `Stock synchronized for ${res.updatedCount} products from all purchase & sale records.`);
+              }}
               validateProduct={(code, name, excludeId) =>
                 StorageService.validateProduct(code, name, excludeId)
               }
