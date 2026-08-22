@@ -588,8 +588,16 @@ export const StorageService = {
       const calculatedStock = opening + totalPurchased - totalSold;
       const finalStock = settings.allowNegativeStock ? calculatedStock : Math.max(0, calculatedStock);
 
-      prod.currentStock = finalStock;
-      prod.updatedAt = new Date().toISOString();
+      const hasChanged = prod.currentStock !== finalStock || prod.openingStock !== opening;
+
+      if (hasChanged) {
+        prod.currentStock = finalStock;
+        prod.updatedAt = new Date().toISOString();
+        addPendingSyncId('products', prod.id);
+        SupabaseSyncService.syncProduct(prod).then((res) => {
+          if (res?.success) removePendingSyncId('products', prod.id);
+        }).catch(() => {});
+      }
 
       details.push({
         id: prod.id,
@@ -600,11 +608,6 @@ export const StorageService = {
         totalSold,
         currentStock: finalStock
       });
-
-      addPendingSyncId('products', prod.id);
-      SupabaseSyncService.syncProduct(prod).then((res) => {
-        if (res?.success) removePendingSyncId('products', prod.id);
-      }).catch(() => {});
     }
 
     setItem(STORAGE_KEYS.PRODUCTS, allProducts);

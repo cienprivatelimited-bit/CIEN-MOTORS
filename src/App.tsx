@@ -155,7 +155,6 @@ export default function App() {
   // Reload all states from Storage Engine (Company Isolated)
   const refreshAllStates = (compId?: string) => {
     const activeCompId = compId || session?.company?.id;
-    StorageService.recalculateProductStock(activeCompId);
     setCompanies(StorageService.getCompanies());
     setSettings(StorageService.getSettings());
     setCustomers(StorageService.getCustomers(activeCompId));
@@ -218,11 +217,19 @@ export default function App() {
       }
     });
 
-    // 2. Cross-Tab & Same-Tab Local Storage Change Listeners
-    const handleLocalRefresh = () => {
-      if (session?.company?.id) {
-        refreshAllStates(session.company.id);
+    // 2. Cross-Tab & Same-Tab Local Storage Change Listeners (Debounced)
+    let refreshTimeout: any = null;
+    const handleLocalRefresh = (e?: any) => {
+      // Ignore pending sync or deleted ids internal updates
+      if (e?.detail?.key === 'busy_ufo_pending_sync' || e?.detail?.key === 'busy_ufo_deleted_ids') {
+        return;
       }
+      if (refreshTimeout) clearTimeout(refreshTimeout);
+      refreshTimeout = setTimeout(() => {
+        if (session?.company?.id) {
+          refreshAllStates(session.company.id);
+        }
+      }, 50);
     };
 
     const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ufo_cross_tab_sync') : null;
