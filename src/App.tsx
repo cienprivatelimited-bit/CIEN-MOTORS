@@ -405,6 +405,23 @@ export default function App() {
     return newPur;
   };
 
+  const handleUpdatePurchaseInvoice = (
+    id: string,
+    purchaseData: Partial<PurchaseInvoice>
+  ) => {
+    const updatedPur = StorageService.updatePurchaseInvoice(id, purchaseData, activeCompId);
+    refreshAllStates(activeCompId);
+    if (session) {
+      AuthService.recordAuditLog(
+        'PURCHASE_EDITED',
+        'purchases',
+        `Modified purchase ${updatedPur.purchaseNumber} from ${updatedPur.supplierName}`,
+        updatedPur.id
+      );
+    }
+    return updatedPur;
+  };
+
   const handleDeletePurchaseInvoice = (id: string) => {
     StorageService.deletePurchaseInvoice(id);
     refreshAllStates(activeCompId);
@@ -638,6 +655,7 @@ export default function App() {
               settings={settings}
               activeCompany={activeCompany}
               onCreatePurchase={handleCreatePurchaseInvoice}
+              onUpdatePurchase={handleUpdatePurchaseInvoice}
               onDeletePurchase={handleDeletePurchaseInvoice}
               onPrintPurchase={(pur) => setPrintingDoc({ doc: pur, isPurchase: true })}
               showToast={addToast}

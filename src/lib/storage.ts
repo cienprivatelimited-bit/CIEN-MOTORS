@@ -696,6 +696,100 @@ export const StorageService = {
     return newPurchase;
   },
 
+  updatePurchaseInvoice(
+    id: string,
+    purchaseData: Partial<PurchaseInvoice>,
+    companyId?: string
+  ): PurchaseInvoice {
+    const purchases = getItem<PurchaseInvoice[]>(STORAGE_KEYS.PURCHASES, INITIAL_PURCHASES);
+    const products = this.getProducts();
+    const suppliers = this.getSuppliers();
+
+    const targetIndex = purchases.findIndex((p) => p.id === id);
+    if (targetIndex === -1) {
+      throw new Error('Purchase invoice not found.');
+    }
+
+    const oldPurchase = purchases[targetIndex];
+    const targetCompId = oldPurchase.companyId || companyId || DEFAULT_COMPANY_ID;
+
+    // 1. Revert old stock additions
+    for (const oldItem of oldPurchase.items) {
+      const pIndex = products.findIndex(
+        (p) =>
+          (p.id === oldItem.productId || p.code === oldItem.productCode) &&
+          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
+      if (pIndex !== -1) {
+        products[pIndex].currentStock -= Number(oldItem.quantity);
+      }
+    }
+
+    // 2. Revert old supplier payable
+    if (oldPurchase.supplierId && oldPurchase.dueAmount > 0) {
+      const sIndex = suppliers.findIndex(
+        (s) => s.id === oldPurchase.supplierId && (s.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
+      if (sIndex !== -1) {
+        suppliers[sIndex].payableBalance = Math.max(
+          0,
+          suppliers[sIndex].payableBalance - Number(oldPurchase.dueAmount)
+        );
+      }
+    }
+
+    // 3. Apply new stock additions
+    const newItems = purchaseData.items || oldPurchase.items;
+    for (const newItem of newItems) {
+      const pIndex = products.findIndex(
+        (p) =>
+          (p.id === newItem.productId || p.code === newItem.productCode) &&
+          (p.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
+      if (pIndex !== -1) {
+        products[pIndex].currentStock += Number(newItem.quantity);
+        if (newItem.unitCost > 0) {
+          products[pIndex].costPrice = Number(newItem.unitCost);
+        }
+      }
+    }
+    setItem(STORAGE_KEYS.PRODUCTS, products);
+
+    // 4. Apply new supplier payable
+    const newSupplierId = purchaseData.supplierId !== undefined ? purchaseData.supplierId : oldPurchase.supplierId;
+    const newDueAmount = purchaseData.dueAmount !== undefined ? purchaseData.dueAmount : oldPurchase.dueAmount;
+
+    if (newSupplierId && newDueAmount > 0) {
+      const sIndex = suppliers.findIndex(
+        (s) => s.id === newSupplierId && (s.companyId || DEFAULT_COMPANY_ID) === targetCompId
+      );
+      if (sIndex !== -1) {
+        suppliers[sIndex].payableBalance += Number(newDueAmount);
+      }
+    }
+    setItem(STORAGE_KEYS.SUPPLIERS, suppliers);
+
+    // 5. Update purchase record
+    const updatedPurchase: PurchaseInvoice = {
+      ...oldPurchase,
+      ...purchaseData,
+      id: oldPurchase.id,
+      purchaseNumber: oldPurchase.purchaseNumber,
+      companyId: targetCompId,
+      updatedAt: new Date().toISOString()
+    };
+
+    purchases[targetIndex] = updatedPurchase;
+    setItem(STORAGE_KEYS.PURCHASES, purchases);
+
+    addPendingSyncId('purchases', updatedPurchase.id);
+    SupabaseSyncService.syncPurchaseInvoice(updatedPurchase).then((res) => {
+      if (res?.success) removePendingSyncId('purchases', updatedPurchase.id);
+    }).catch(() => {});
+
+    return updatedPurchase;
+  },
+
   deletePurchaseInvoice(id: string): void {
     addDeletedId(id);
     removePendingSyncId('purchases', id);

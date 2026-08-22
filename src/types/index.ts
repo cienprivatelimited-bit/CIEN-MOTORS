@@ -185,6 +185,7 @@ export interface PurchaseInvoice {
   paidAmount: number;
   dueAmount: number;
   notes?: string;
+  updatedAt?: string;
   createdAt: string;
 }
 

@@ -10,7 +10,8 @@ import {
   Truck,
   MessageCircle,
   DollarSign,
-  Package
+  Package,
+  Edit3
 } from 'lucide-react';
 import {
   PurchaseInvoice,
@@ -33,6 +34,7 @@ interface PurchasesProps {
   settings: AppSettings;
   activeCompany?: Company;
   onCreatePurchase: (purchase: Omit<PurchaseInvoice, 'id' | 'purchaseNumber' | 'createdAt'>) => PurchaseInvoice;
+  onUpdatePurchase?: (id: string, purchase: Partial<PurchaseInvoice>) => PurchaseInvoice;
   onDeletePurchase?: (id: string) => void;
   onPrintPurchase: (purchase: PurchaseInvoice) => void;
   showToast: (type: 'success' | 'error' | 'info', message: string) => void;
@@ -46,6 +48,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
   settings,
   activeCompany,
   onCreatePurchase,
+  onUpdatePurchase,
   onDeletePurchase,
   onPrintPurchase,
   showToast,
@@ -53,9 +56,11 @@ export const Purchases: React.FC<PurchasesProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<PurchaseInvoice | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const canAdd = checkPermission(session?.effectivePermissions, 'purchases', 'add');
+  const canEdit = checkPermission(session?.effectivePermissions, 'purchases', 'edit');
   const canDelete = checkPermission(session?.effectivePermissions, 'purchases', 'delete');
   const canPrint = checkPermission(session?.effectivePermissions, 'purchases', 'print');
 
@@ -244,6 +249,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
   const dueAmount = Math.max(0, grandTotal - finalPaidAmount);
 
   const handleOpenModal = () => {
+    setEditingPurchase(null);
     setSelectedSupplierId('');
     setCustomSupplierName('Cash Supplier / Spot Purchase');
     setPurchaseType('CASH');
@@ -259,9 +265,55 @@ export const Purchases: React.FC<PurchasesProps> = ({
         quantity: '1',
         unitCost: '0',
         discount: '0',
-        discountType: 'PERCENT'
+        discountType: defaultDiscountType
       }
     ]);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (pur: PurchaseInvoice) => {
+    setEditingPurchase(pur);
+    setSelectedSupplierId(pur.supplierId || '');
+    setCustomSupplierName(pur.supplierName || 'Cash Supplier / Spot Purchase');
+    setPurchaseType(pur.type || 'CASH');
+    setPurchaseDate(pur.date || new Date().toISOString().split('T')[0]);
+    
+    // Calculate extra discount (total discount minus item discounts)
+    const itemDiscSum = (pur.items || []).reduce((sum, it) => {
+      const gross = (Number(it.quantity) || 0) * (Number(it.unitCost) || 0);
+      return sum + Math.max(0, gross - (Number(it.total) || 0));
+    }, 0);
+    const extraDisc = Math.max(0, (Number(pur.discount) || 0) - itemDiscSum);
+    setDiscount(extraDisc > 0 ? String(extraDisc) : '0');
+
+    setPaidAmountInput(String(pur.paidAmount || 0));
+    setNotes(pur.notes || '');
+
+    if (pur.items && pur.items.length > 0) {
+      setLineItems(
+        pur.items.map((item) => ({
+          productId: item.productId || '',
+          productCode: item.productCode || '',
+          productName: item.productName || '',
+          quantity: String(item.quantity || 1),
+          unitCost: String(item.unitCost || 0),
+          discount: String(item.discount || 0),
+          discountType: (item.discountType || defaultDiscountType) as 'PERCENT' | 'FIXED'
+        }))
+      );
+    } else {
+      setLineItems([
+        {
+          productId: '',
+          productCode: '',
+          productName: '',
+          quantity: '1',
+          unitCost: '0',
+          discount: '0',
+          discountType: defaultDiscountType
+        }
+      ]);
+    }
     setIsModalOpen(true);
   };
 
@@ -282,28 +334,51 @@ export const Purchases: React.FC<PurchasesProps> = ({
     const supplierNameToUse = supp ? supp.name : (customSupplierName || 'Cash Supplier / Spot Purchase');
 
     try {
-      const newPurchase = onCreatePurchase({
-        date: purchaseDate,
-        supplierId: selectedSupplierId || undefined,
-        supplierName: supplierNameToUse,
-        type: purchaseType,
-        items: calculatedItems,
-        subtotal: grossSubtotal,
-        discount: totalDiscount,
-        grandTotal,
-        paidAmount: finalPaidAmount,
-        dueAmount,
-        notes
-      });
+      if (editingPurchase && onUpdatePurchase) {
+        const updated = onUpdatePurchase(editingPurchase.id, {
+          date: purchaseDate,
+          supplierId: selectedSupplierId || undefined,
+          supplierName: supplierNameToUse,
+          type: purchaseType,
+          items: calculatedItems,
+          subtotal: grossSubtotal,
+          discount: totalDiscount,
+          grandTotal,
+          paidAmount: finalPaidAmount,
+          dueAmount,
+          notes
+        });
 
-      showToast(
-        'success',
-        `Purchase ${newPurchase.purchaseNumber} recorded! Stock increased.`
-      );
-      setIsModalOpen(false);
-      onPrintPurchase(newPurchase);
+        showToast(
+          'success',
+          `Purchase ${updated.purchaseNumber} modified successfully! Inventory stock and supplier ledger adjusted.`
+        );
+        setIsModalOpen(false);
+        setEditingPurchase(null);
+      } else {
+        const newPurchase = onCreatePurchase({
+          date: purchaseDate,
+          supplierId: selectedSupplierId || undefined,
+          supplierName: supplierNameToUse,
+          type: purchaseType,
+          items: calculatedItems,
+          subtotal: grossSubtotal,
+          discount: totalDiscount,
+          grandTotal,
+          paidAmount: finalPaidAmount,
+          dueAmount,
+          notes
+        });
+
+        showToast(
+          'success',
+          `Purchase ${newPurchase.purchaseNumber} recorded! Stock increased.`
+        );
+        setIsModalOpen(false);
+        onPrintPurchase(newPurchase);
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to record purchase';
+      const msg = err instanceof Error ? err.message : 'Failed to save purchase bill';
       showToast('error', msg);
     }
   };
@@ -406,6 +481,16 @@ export const Purchases: React.FC<PurchasesProps> = ({
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-1.5 ml-auto">
+                          {onUpdatePurchase && canEdit && (
+                            <button
+                              onClick={() => handleOpenEditModal(p)}
+                              className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-xl cursor-pointer flex items-center gap-1 text-xs font-bold"
+                              title="Modify / Edit Purchase Bill"
+                            >
+                              <Edit3 className="w-4 h-4 text-blue-600" />
+                              <span className="hidden md:inline">Edit</span>
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               const supp = suppliers.find((s) => s.id === p.supplierId);
@@ -470,6 +555,16 @@ export const Purchases: React.FC<PurchasesProps> = ({
                       )}
                     </div>
                     <div className="flex items-center gap-1.5">
+                      {onUpdatePurchase && canEdit && (
+                        <button
+                          onClick={() => handleOpenEditModal(p)}
+                          className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer"
+                          title="Modify Purchase Bill"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           const supp = suppliers.find((s) => s.id === p.supplierId);
@@ -488,7 +583,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
                         <Printer className="w-3.5 h-3.5" />
                         <span>Print</span>
                       </button>
-                      {onDeletePurchase && (
+                      {onDeletePurchase && canDelete && (
                         <button
                           onClick={() => setDeleteConfirmId(p.id)}
                           className="p-1.5 hover:bg-rose-50 text-rose-600 rounded-xl cursor-pointer"
@@ -538,25 +633,39 @@ export const Purchases: React.FC<PurchasesProps> = ({
         </div>
       )}
 
-      {/* Create Purchase Modal - Spacious & Easy-to-use Layout */}
+      {/* Create / Edit Purchase Modal - Spacious & Easy-to-use Layout */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full p-4 sm:p-6 md:p-8 animate-in fade-in zoom-in-95 my-2 sm:my-6 max-h-[95vh] flex flex-col">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                  <ShoppingBag className="w-5 h-5" />
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${editingPurchase ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                  {editingPurchase ? <Edit3 className="w-5 h-5" /> : <ShoppingBag className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="font-bold text-xl sm:text-2xl text-slate-900">Record Purchase Bill</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-xl sm:text-2xl text-slate-900">
+                      {editingPurchase ? `Modify Purchase Bill: ${editingPurchase.purchaseNumber}` : 'Record Purchase Bill'}
+                    </h3>
+                    {editingPurchase && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                        Editing Mode
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500 font-normal">
-                    Receive stock inventory, record vendor costs, item-wise discounts, and update accounts payable
+                    {editingPurchase
+                      ? 'Update vendor, dates, item details, cost prices, quantities, and payment terms'
+                      : 'Receive stock inventory, record vendor costs, item-wise discounts, and update accounts payable'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingPurchase(null);
+                }}
                 className="text-slate-400 hover:text-slate-700 p-2 rounded-xl hover:bg-slate-100 cursor-pointer transition-colors"
                 title="Close"
               >
@@ -947,17 +1056,24 @@ export const Purchases: React.FC<PurchasesProps> = ({
               <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-4 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingPurchase(null);
+                  }}
                   className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 text-sm font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                  className={`px-6 py-2.5 text-sm font-bold text-white rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95 ${
+                    editingPurchase
+                      ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+                      : 'bg-purple-600 hover:bg-purple-700 shadow-purple-200'
+                  }`}
                 >
                   <CheckCircle2 className="w-4 h-4 text-yellow-400" />
-                  <span>Confirm & Save Purchase</span>
+                  <span>{editingPurchase ? 'Update Purchase Bill' : 'Confirm & Save Purchase'}</span>
                 </button>
               </div>
             </form>
